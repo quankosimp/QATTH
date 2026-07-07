@@ -223,4 +223,4 @@ Admin endpoints require an authenticated user with role `admin`.
 - Returns file asset metadata for a user-owned or admin-accessible file.
 
 - `GET /v1/files/{file_id}/signed-url`
-- Returns a short-lived URL for downloading the object from S3-compatible storage. In local fallback mode, the URL is the local storage key.
+- Returns a short-lived URL for downloading the object from MinIO-backed storage. In local fallback mode, the URL is the local storage key.

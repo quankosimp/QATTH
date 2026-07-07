@@ -63,7 +63,7 @@ Main user journey:
 
 - Admin role support.
 - Admin APIs for users, CV scans, interviews, crawler runs, and jobs.
-- Readiness endpoint for deployment.
+- Readiness endpoint for runtime health checks.
 - Admin metrics endpoint for operational counters.
 - Production readiness checklist in `docs/production_readiness.md`.
 
@@ -110,12 +110,6 @@ Frontend-facing contract summary:
 docs/api_contract.md
 ```
 
-Production readiness notes:
-
-```text
-docs/production_readiness.md
-```
-
 ## Local development
 
 Requirements:
@@ -135,7 +129,7 @@ alembic upgrade head
 uvicorn app.main:app --reload --app-dir backend
 ```
 
-Run with Docker Compose:
+Run backend stack with Docker Compose:
 
 ```bash
 cp .env.example .env
@@ -149,7 +143,7 @@ Services:
 - Prometheus metrics: `http://localhost:8000/metrics`
 - PostgreSQL + pgvector: `localhost:5432`
 - Redis: `localhost:6379`
-- MinIO S3-compatible object storage: `http://localhost:9001`
+- MinIO object storage: `http://localhost:9001`
 - Celery worker: `worker` service in Docker Compose
 
 For real Gemini-backed CV scan, interview evaluation, and Gemini Live interview, set this in `.env`:
@@ -218,9 +212,7 @@ This is an MVP foundation for a real product. It is intentionally backend-first 
 
 Important remaining production work:
 
-- Add Alembic migrations.
-- Move long-running tasks to a worker queue.
-- Replace local file storage with object storage.
-- Add production monitoring and error tracking.
+- Wire concrete CV scan, interview evaluation, job crawl, and match generation jobs into the Celery task system.
 - Improve crawler sources through official APIs, feeds, or partnerships.
 - Add automated integration tests for the full CV to interview to job matching flow.
+- Add production email delivery for password reset instead of returning local/dev reset tokens.
