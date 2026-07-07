@@ -34,7 +34,7 @@ This repository is now beyond a single-user demo, but it is still an MVP. Use th
 
 - Database migrations use Alembic. New schema changes must be shipped through explicit revisions.
 - Long-running work is still synchronous; production should move CV scan, evaluation, crawling, and embedding into a worker queue.
-- Local file storage is acceptable for demo only; production should use S3-compatible object storage.
+- Local file storage is acceptable for demo only; production should use managed MinIO object storage.
 - The crawler has a robots.txt guard but should be replaced with official APIs, feeds, or partner integrations where possible.
 - Matching quality needs offline evaluation and feedback-based tuning.
 

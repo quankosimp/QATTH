@@ -94,7 +94,7 @@ class LocalStorage:
 
         client = self._minio_client()
         return client.presigned_get_object(
-            self.settings.s3_bucket,
+            self.settings.minio_bucket,
             storage_key,
             expires=timedelta(seconds=expires_seconds),
         )
@@ -103,10 +103,10 @@ class LocalStorage:
         from io import BytesIO
 
         client = self._minio_client()
-        if not client.bucket_exists(self.settings.s3_bucket):
-            client.make_bucket(self.settings.s3_bucket)
+        if not client.bucket_exists(self.settings.minio_bucket):
+            client.make_bucket(self.settings.minio_bucket)
         client.put_object(
-            self.settings.s3_bucket,
+            self.settings.minio_bucket,
             storage_key,
             BytesIO(content),
             length=len(content),
@@ -117,8 +117,8 @@ class LocalStorage:
         from minio import Minio
 
         return Minio(
-            self.settings.s3_endpoint,
-            access_key=self.settings.s3_access_key,
-            secret_key=self.settings.s3_secret_key,
-            secure=self.settings.s3_secure,
+            self.settings.minio_endpoint,
+            access_key=self.settings.minio_access_key,
+            secret_key=self.settings.minio_secret_key,
+            secure=self.settings.minio_secure,
         )

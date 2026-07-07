@@ -149,7 +149,7 @@ Services:
 - Prometheus metrics: `http://localhost:8000/metrics`
 - PostgreSQL + pgvector: `localhost:5432`
 - Redis: `localhost:6379`
-- MinIO S3-compatible object storage: `http://localhost:9001`
+- MinIO object storage: `http://localhost:9001`
 - Celery worker: `worker` service in Docker Compose
 
 For real Gemini-backed CV scan, interview evaluation, and Gemini Live interview, set this in `.env`:

@@ -17,11 +17,11 @@ class Settings(BaseSettings):
     celery_result_backend: str = "redis://redis:6379/1"
 
     storage_backend: str = "local"
-    s3_endpoint: str = "minio:9000"
-    s3_access_key: str = "qatthminio"
-    s3_secret_key: str = "qatthminiosecret"
-    s3_bucket: str = "qatth-assets"
-    s3_secure: bool = False
+    minio_endpoint: str = "minio:9000"
+    minio_access_key: str = "qatthminio"
+    minio_secret_key: str = "qatthminiosecret"
+    minio_bucket: str = "qatth-assets"
+    minio_secure: bool = False
     rate_limit_enabled: bool = True
     rate_limit_requests_per_minute: int = 120
     otel_enabled: bool = False

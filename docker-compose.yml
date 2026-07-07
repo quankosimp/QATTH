@@ -40,11 +40,11 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
       STORAGE_BACKEND: minio
-      S3_ENDPOINT: minio:9000
-      S3_ACCESS_KEY: qatthminio
-      S3_SECRET_KEY: qatthminiosecret
-      S3_BUCKET: qatth-assets
-      S3_SECURE: "false"
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: qatthminio
+      MINIO_SECRET_KEY: qatthminiosecret
+      MINIO_BUCKET: qatth-assets
+      MINIO_SECURE: "false"
       UPLOAD_DIR: /app/data/uploads
       GENERATED_DIR: /app/data/generated
     command: celery -A app.core.celery_app worker --loglevel=INFO
