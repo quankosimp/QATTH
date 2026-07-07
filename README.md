@@ -25,6 +25,22 @@ API docs:
 - ReDoc: `http://localhost:8000/redoc`
 - OpenAPI JSON: `http://localhost:8000/openapi.json`
 
+## Streamlit demo
+
+Run the backend first, then:
+
+```bash
+streamlit run streamlit_app.py
+```
+
+Demo flow:
+
+1. Upload CV and scan it.
+2. Create an interview room.
+3. Send interview messages through the backend WebSocket.
+4. End the interview to create an evaluation.
+5. Seed local jobs and generate matches.
+
 ## Optional Postgres + pgvector
 
 ```bash
@@ -40,3 +56,7 @@ DATABASE_URL=postgresql+psycopg://qatth:qatth@localhost:5432/qatth
 ## Development rule
 
 This repo is implemented in incremental parts. Each major product part should be committed before starting the next one.
+
+## API contract
+
+See `docs/api_contract.md` for the frontend-facing REST/WebSocket contract summary.
