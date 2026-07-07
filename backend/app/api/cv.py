@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
+from app.core.errors import AppError
 from app.core.security import CurrentUser, get_current_user
 from app.schemas.common import APIResponse, make_response
 from app.schemas.cv import (
@@ -12,7 +13,9 @@ from app.schemas.cv import (
     CVScanResult,
     CVVersionListResult,
 )
+from app.schemas.profile import ConsentPayload
 from app.services.cv_scan import CVScanService
+from app.services.profile import ProfileService
 
 router = APIRouter(prefix="/cvs", tags=["cvs"])
 
@@ -33,9 +36,19 @@ async def scan_cv(
     file: UploadFile = File(...),
     target_role: str | None = Form(default=None),
     language: str = Form(default="vi"),
+    consent_accepted: bool = Form(default=False),
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(get_current_user),
 ) -> APIResponse[CVScanResult]:
+    if not consent_accepted:
+        raise AppError(
+            status_code=422,
+            code="CV_PROCESSING_CONSENT_REQUIRED",
+            message="CV processing consent is required before scanning a CV.",
+        )
+    ProfileService(db=db, current_user=current_user).record_consent(
+        ConsentPayload(consent_type="cv_processing", accepted=True)
+    )
     result = await CVScanService(db=db).scan(
         upload_file=file,
         target_role=target_role,

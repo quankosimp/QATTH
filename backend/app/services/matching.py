@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
 from app.core.security import CurrentUser
-from app.models.db import CVRecord, InterviewSession, JobPosting, MatchRun
+from app.models.db import CVRecord, InterviewSession, JobPosting, MatchRun, UserJobPreference
 from app.schemas.cv import CVProfile
 from app.schemas.interview import InterviewResult
 from app.schemas.jobs import JobPostingRead
@@ -43,6 +43,11 @@ class MatchingService:
 
         profile = CVProfile.model_validate(cv_record.parsed_profile or {})
         interview_result = self._load_interview_result(interview_id)
+        preference = self._load_preferences()
+        if not location and preference and preference.locations:
+            location = preference.locations[0]
+        if not working_model and preference and preference.working_models:
+            working_model = preference.working_models[0]
         jobs = self._load_jobs(location=location, working_model=working_model)
 
         if not jobs:
@@ -127,6 +132,13 @@ class MatchingService:
         if working_model:
             statement = statement.where(JobPosting.working_model == working_model)
         return list(self.db.scalars(statement).all())
+
+    def _load_preferences(self) -> UserJobPreference | None:
+        if not self.current_user:
+            return None
+        return self.db.scalar(
+            select(UserJobPreference).where(UserJobPreference.user_id == self.current_user.id)
+        )
 
     def _score_job(
         self,

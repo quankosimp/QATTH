@@ -156,6 +156,10 @@ def main() -> None:
         target_role = st.text_input("Target role", value="Backend Developer Intern")
         language = st.selectbox("Language", ["vi", "en"], index=0)
         uploaded = st.file_uploader("Upload CV", type=["pdf", "docx"])
+        consent_accepted = st.checkbox(
+            "I consent to processing this CV for profile extraction and job matching.",
+            value=False,
+        )
 
         if st.button("Scan CV", disabled=uploaded is None):
             if uploaded is not None:
@@ -166,7 +170,11 @@ def main() -> None:
                         uploaded.type or "application/pdf",
                     )
                 }
-                data = {"target_role": target_role, "language": language}
+                data = {
+                    "target_role": target_role,
+                    "language": language,
+                    "consent_accepted": str(consent_accepted).lower(),
+                }
                 with httpx.Client(timeout=120.0) as client:
                     result = unwrap_response(
                         client.post(
@@ -280,6 +288,24 @@ def main() -> None:
 
     with tab_jobs:
         st.header("Job matching")
+        with st.expander("Job preferences"):
+            roles_text = st.text_input("Preferred roles, comma separated", value=target_role)
+            locations_text = st.text_input("Preferred locations, comma separated", value="")
+            working_model_pref = st.selectbox(
+                "Preferred working model",
+                ["", "remote", "hybrid", "at_office"],
+            )
+            skills_text = st.text_input("Preferred skills, comma separated", value="")
+            if st.button("Save job preferences"):
+                payload = {
+                    "target_roles": [item.strip() for item in roles_text.split(",") if item.strip()],
+                    "locations": [item.strip() for item in locations_text.split(",") if item.strip()],
+                    "working_models": [working_model_pref] if working_model_pref else [],
+                    "salary_expectation": None,
+                    "preferred_skills": [item.strip() for item in skills_text.split(",") if item.strip()],
+                }
+                st.json(put_json("/v1/preferences/jobs", payload))
+
         col_a, col_b = st.columns(2)
         with col_a:
             if st.button("Seed local IT jobs"):
@@ -311,6 +337,15 @@ def main() -> None:
                 st.write("JD")
                 st.write(job["jd_text"])
                 st.link_button("Apply / source", item["apply_url"])
+                feedback_cols = st.columns(4)
+                actions = ["saved", "applied", "relevant", "not_relevant"]
+                for index, action in enumerate(actions):
+                    if feedback_cols[index].button(action, key=f"{job['job_id']}-{action}"):
+                        result = post_json(
+                            f"/v1/jobs/{job['job_id']}/interactions",
+                            {"action": action},
+                        )
+                        st.success(f"Recorded: {result['action']}")
 
     if tab_admin is not None:
         with tab_admin:

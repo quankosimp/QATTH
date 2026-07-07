@@ -25,6 +25,7 @@ All REST endpoints return:
 - `file`: PDF or DOCX
 - `target_role`: optional string
 - `language`: `vi` or `en`
+- `consent_accepted`: must be `true`
 - Returns `cv_id`, status `pending_review`, and `draft_profile`.
 - The scan result is not saved as the final `profile` until the user confirms edited JSON.
 
@@ -119,6 +120,29 @@ All REST endpoints return:
 
 - `GET /v1/matches/{match_id}`
 - Reloads a previous match run.
+
+## Preferences, feedback, privacy
+
+- `GET /v1/preferences/jobs`
+- Returns authenticated user's job search preferences.
+
+- `PUT /v1/preferences/jobs`
+- Saves target roles, locations, working models, salary expectation, and preferred skills.
+
+- `POST /v1/jobs/{job_id}/interactions`
+- Records `saved`, `applied`, `relevant`, `not_relevant`, or `hidden` job feedback.
+
+- `GET /v1/jobs/interactions`
+- Lists user's job interactions.
+
+- `POST /v1/privacy/consents`
+- Records consent decisions.
+
+- `GET /v1/privacy/consents`
+- Lists consent history.
+
+- `DELETE /v1/privacy/me/data`
+- Deletes user-owned CVs, interviews, matches, interactions, consents, tokens, and deactivates the account.
 
 ## Admin
 
