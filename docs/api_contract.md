@@ -119,3 +119,28 @@ All REST endpoints return:
 
 - `GET /v1/matches/{match_id}`
 - Reloads a previous match run.
+
+## Admin
+
+Admin endpoints require an authenticated user with role `admin`.
+
+- `GET /v1/admin/overview`
+- Returns operational counts for users, CVs, interviews, jobs, and failed crawl runs.
+
+- `GET /v1/admin/users`
+- Lists users.
+
+- `PATCH /v1/admin/users/{user_id}/status`
+- Activates or deactivates a user.
+
+- `GET /v1/admin/cv-scans`
+- Lists CV scan status and failures.
+
+- `GET /v1/admin/interviews`
+- Lists interview sessions.
+
+- `GET /v1/admin/crawl-runs`
+- Lists crawler runs and failures.
+
+- `GET /v1/admin/jobs`
+- Lists stored jobs.

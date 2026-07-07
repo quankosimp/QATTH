@@ -143,7 +143,13 @@ def main() -> None:
         st.info("Login or register to use the career platform.")
         return
 
-    tab_cv, tab_interview, tab_jobs = st.tabs(["1. CV Scan", "2. Interview", "3. Job Matches"])
+    tabs = ["1. CV Scan", "2. Interview", "3. Job Matches"]
+    is_admin = st.session_state.current_user and st.session_state.current_user["role"] == "admin"
+    if is_admin:
+        tabs.append("Admin")
+    created_tabs = st.tabs(tabs)
+    tab_cv, tab_interview, tab_jobs = created_tabs[:3]
+    tab_admin = created_tabs[3] if is_admin else None
 
     with tab_cv:
         st.header("Scan CV")
@@ -305,6 +311,22 @@ def main() -> None:
                 st.write("JD")
                 st.write(job["jd_text"])
                 st.link_button("Apply / source", item["apply_url"])
+
+    if tab_admin is not None:
+        with tab_admin:
+            st.header("Admin operations")
+            if st.button("Refresh admin overview"):
+                st.session_state.admin_overview = get_json("/v1/admin/overview")
+            if st.session_state.get("admin_overview"):
+                st.json(st.session_state.admin_overview)
+
+            admin_section = st.selectbox(
+                "Dataset",
+                ["users", "cv-scans", "interviews", "crawl-runs", "jobs"],
+            )
+            if st.button("Load admin dataset"):
+                data = get_json(f"/v1/admin/{admin_section}")
+                st.json(data)
 
 
 if __name__ == "__main__":

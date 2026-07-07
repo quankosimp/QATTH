@@ -12,3 +12,4 @@ def test_openapi_includes_core_contract_paths():
     assert "/v1/interviews/{interview_id}/end" in paths
     assert "/v1/jobs/crawl-runs" in paths
     assert "/v1/matches" in paths
+    assert "/v1/admin/overview" in paths
