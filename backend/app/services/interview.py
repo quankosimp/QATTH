@@ -67,6 +67,48 @@ class InterviewService:
             session.status = "disconnected"
             self.db.commit()
 
+    def record_user_text(
+        self,
+        *,
+        interview_id: str,
+        text: str,
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        self._add_turn(
+            interview_id=interview_id,
+            role="user",
+            event_type="transcript.user",
+            text=text,
+            payload=payload,
+        )
+        self.db.commit()
+
+    def record_user_audio(self, *, interview_id: str, payload: dict[str, Any]) -> None:
+        self._add_turn(
+            interview_id=interview_id,
+            role="user",
+            event_type="audio.chunk",
+            text=None,
+            payload=self._safe_audio_payload(payload),
+        )
+        self.db.commit()
+
+    def record_model_text(
+        self,
+        *,
+        interview_id: str,
+        text: str,
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        self._add_turn(
+            interview_id=interview_id,
+            role="model",
+            event_type="transcript.model",
+            text=text,
+            payload=payload,
+        )
+        self.db.commit()
+
     def handle_client_event(self, *, interview_id: str, raw_event: dict[str, Any]) -> list[dict[str, Any]]:
         session = self._get_session(interview_id)
         event = InterviewClientEvent.model_validate(raw_event)

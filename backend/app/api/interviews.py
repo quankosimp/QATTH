@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.errors import AppError
 from app.schemas.common import APIResponse, make_response
@@ -11,6 +12,7 @@ from app.schemas.interview import (
     InterviewResultRead,
 )
 from app.services.interview import InterviewService
+from app.services.gemini_live import GeminiLiveProxy
 
 router = APIRouter(prefix="/interviews", tags=["interviews"])
 
@@ -40,6 +42,15 @@ async def interview_stream(
 
     try:
         service.mark_live(interview_id=interview_id)
+        settings = get_settings()
+
+        if settings.gemini_api_key:
+            await GeminiLiveProxy(db=db, settings=settings).run(
+                websocket=websocket,
+                interview_id=interview_id,
+            )
+            return
+
         await websocket.send_json({"type": "interview.state", "payload": {"state": "live"}})
 
         while True:
