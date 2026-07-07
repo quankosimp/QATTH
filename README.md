@@ -63,7 +63,7 @@ Main user journey:
 
 - Admin role support.
 - Admin APIs for users, CV scans, interviews, crawler runs, and jobs.
-- Readiness endpoint for deployment.
+- Readiness endpoint for runtime health checks.
 - Admin metrics endpoint for operational counters.
 - Production readiness checklist in `docs/production_readiness.md`.
 
@@ -89,9 +89,6 @@ Not included in this branch:
 
 - Production frontend application
 - Temporary Streamlit demo
-- Cloud/production deployment ownership
-- Domain, HTTPS, DNS, reverse proxy, cloud networking
-- Production backup/monitoring operations
 
 The temporary Streamlit demo lives on branch:
 
@@ -113,12 +110,6 @@ Frontend-facing contract summary:
 docs/api_contract.md
 ```
 
-Production readiness notes:
-
-```text
-docs/production_readiness.md
-```
-
 ## Local development
 
 Requirements:
@@ -138,18 +129,12 @@ alembic upgrade head
 uvicorn app.main:app --reload --app-dir backend
 ```
 
-Run with Docker Compose:
+Run backend stack with Docker Compose:
 
 ```bash
 cp .env.example .env
 docker compose up --build
 ```
-
-Docker handoff scope:
-
-- This repository provides Dockerfile and Docker Compose services needed to run the backend stack.
-- The backend owner is responsible for keeping these containers buildable and configurable through `.env`.
-- The deployment owner is responsible for production hosting, secrets injection, HTTPS, domain/DNS, reverse proxy, autoscaling, backups, monitoring, and incident response.
 
 Services:
 
@@ -231,9 +216,3 @@ Important remaining production work:
 - Improve crawler sources through official APIs, feeds, or partnerships.
 - Add automated integration tests for the full CV to interview to job matching flow.
 - Add production email delivery for password reset instead of returning local/dev reset tokens.
-- Add deployment-team runbook after the target hosting platform is chosen.
-
-Deployment ownership note:
-
-- Backend responsibility: application code, API contract, Dockerfile, Compose services, migrations, and environment variable contract.
-- Deployment responsibility: infrastructure platform, production secrets, TLS/HTTPS, domain/DNS, ingress/reverse proxy, scaling, backup/restore, observability stack, and production runbook.
