@@ -24,6 +24,7 @@ This repository is now beyond a single-user demo, but it is still an MVP. Use th
 - Use `GET /v1/admin/*` endpoints to inspect users, CV scans, interviews, crawler runs, and jobs.
 - Back up Postgres and object/file storage regularly.
 - Monitor failed CV scans, failed crawl runs, interview failures, and missing Gemini API keys.
+- Monitor failed model runs and prompt/model versions through admin APIs.
 
 ## Known MVP limitations
 

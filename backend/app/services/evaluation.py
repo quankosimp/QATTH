@@ -5,6 +5,7 @@ from app.models.db import CVRecord, InterviewSession, InterviewTurn
 from app.schemas.cv import CVProfile
 from app.schemas.interview import InterviewResult, RubricScore, TranscriptMessage
 from app.services.gemini import GeminiService
+from app.services.model_runs import ModelRunService
 
 
 class EvaluationService:
@@ -22,16 +23,35 @@ class EvaluationService:
         transcript = self._load_transcript(interview_id=session.id)
 
         if self.gemini.is_configured:
-            payload = await self.gemini.evaluate_interview(
-                profile=profile.model_dump(mode="json"),
-                transcript=[item.model_dump(mode="json") for item in transcript],
-                target_role=session.target_role,
-                language=session.language,
-                response_schema=InterviewResult,
+            timer = ModelRunService(db=self.db).start(
+                user_id=session.user_id,
+                run_type="interview_evaluation",
+                provider="gemini",
+                model=self.gemini.settings.gemini_evaluation_model,
+                input_payload={
+                    "interview_id": session.id,
+                    "cv_id": cv_record.id,
+                    "target_role": session.target_role,
+                    "language": session.language,
+                    "transcript_turns": len(transcript),
+                },
+                output_schema="InterviewResult",
             )
-            result = InterviewResult.model_validate(payload)
-            result.full_transcript_ref = session.id
-            return result
+            try:
+                payload = await self.gemini.evaluate_interview(
+                    profile=profile.model_dump(mode="json"),
+                    transcript=[item.model_dump(mode="json") for item in transcript],
+                    target_role=session.target_role,
+                    language=session.language,
+                    response_schema=InterviewResult,
+                )
+                result = InterviewResult.model_validate(payload)
+                result.full_transcript_ref = session.id
+                timer.complete(output_json=result.model_dump(mode="json"))
+                return result
+            except Exception as exc:
+                timer.fail(error=str(exc))
+                raise
 
         return self._demo_result(
             profile=profile,

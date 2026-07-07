@@ -169,6 +169,12 @@ Admin endpoints require an authenticated user with role `admin`.
 - `GET /v1/admin/jobs`
 - Lists stored jobs.
 
+- `GET /v1/admin/model-runs`
+- Lists LLM/model calls, status, latency, schema, output metadata, and errors.
+
+- `POST /v1/admin/model-runs/{run_id}/retry`
+- Marks a failed model run as retry requested for operator follow-up.
+
 ## Ops
 
 - `GET /v1/ops/readiness`

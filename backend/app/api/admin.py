@@ -8,11 +8,13 @@ from app.schemas.admin import (
     AdminCrawlRunList,
     AdminInterviewList,
     AdminJobList,
+    AdminModelRunList,
     AdminOverview,
     AdminUserList,
     UserStatusUpdate,
 )
 from app.schemas.auth import UserRead
+from app.schemas.ai import ModelRunRead
 from app.schemas.common import APIResponse, make_response
 from app.services.admin import AdminService
 
@@ -87,3 +89,26 @@ def list_jobs(
     _: CurrentUser = Depends(require_admin),
 ) -> APIResponse[AdminJobList]:
     return make_response(AdminService(db=db).list_jobs(source=source), request=request)
+
+
+@router.get("/model-runs", response_model=APIResponse[AdminModelRunList])
+def list_model_runs(
+    request: Request,
+    status: str | None = None,
+    run_type: str | None = None,
+    db: Session = Depends(get_db),
+    _: CurrentUser = Depends(require_admin),
+) -> APIResponse[AdminModelRunList]:
+    result = AdminService(db=db).list_model_runs(status=status, run_type=run_type)
+    return make_response(result, request=request)
+
+
+@router.post("/model-runs/{run_id}/retry", response_model=APIResponse[ModelRunRead])
+def retry_model_run(
+    request: Request,
+    run_id: str,
+    db: Session = Depends(get_db),
+    _: CurrentUser = Depends(require_admin),
+) -> APIResponse[ModelRunRead]:
+    result = AdminService(db=db).retry_model_run(run_id=run_id)
+    return make_response(result, request=request)

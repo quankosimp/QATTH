@@ -147,6 +147,49 @@ class FileAsset(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
+class PromptTemplate(Base):
+    __tablename__ = "prompt_templates"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    key: Mapped[str] = mapped_column(String(120), unique=True, nullable=False, index=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class PromptVersion(Base):
+    __tablename__ = "prompt_versions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    template_id: Mapped[str] = mapped_column(ForeignKey("prompt_templates.id"), nullable=False, index=True)
+    version: Mapped[str] = mapped_column(String(80), nullable=False)
+    model: Mapped[str] = mapped_column(String(160), nullable=False)
+    prompt_text: Mapped[str] = mapped_column(Text, nullable=False)
+    schema_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class ModelRun(Base):
+    __tablename__ = "model_runs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    run_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(80), nullable=False, default="gemini")
+    model: Mapped[str] = mapped_column(String(160), nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="running", index=True)
+    prompt_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("prompt_versions.id"), nullable=True, index=True
+    )
+    input_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    output_schema: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class InterviewSession(Base):
     __tablename__ = "interview_sessions"
 

@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
 from app.models.db import CVRecord, CrawlRun, InterviewSession, JobPosting, User
+from app.services.model_runs import ModelRunService
 from app.schemas.admin import (
     AdminCVScanList,
     AdminCVScanRead,
@@ -11,6 +12,7 @@ from app.schemas.admin import (
     AdminInterviewList,
     AdminInterviewRead,
     AdminJobList,
+    AdminModelRunList,
     AdminOverview,
     AdminUserList,
 )
@@ -157,6 +159,13 @@ class AdminService:
             ],
             total=len(jobs),
         )
+
+    def list_model_runs(self, *, status: str | None = None, run_type: str | None = None) -> AdminModelRunList:
+        result = ModelRunService(db=self.db).list(status=status, run_type=run_type)
+        return AdminModelRunList(items=result.items, total=result.total)
+
+    def retry_model_run(self, *, run_id: str):
+        return ModelRunService(db=self.db).mark_retry_requested(run_id=run_id)
 
     def _count(self, model) -> int:
         return self.db.scalar(select(func.count()).select_from(model)) or 0
