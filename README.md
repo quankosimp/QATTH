@@ -146,6 +146,7 @@ Services:
 
 - FastAPI: `http://localhost:8000`
 - Swagger UI: `http://localhost:8000/docs`
+- Prometheus metrics: `http://localhost:8000/metrics`
 - PostgreSQL + pgvector: `localhost:5432`
 - Redis: `localhost:6379`
 - MinIO S3-compatible object storage: `http://localhost:9001`

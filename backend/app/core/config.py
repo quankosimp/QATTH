@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     s3_secure: bool = False
     rate_limit_enabled: bool = True
     rate_limit_requests_per_minute: int = 120
+    otel_enabled: bool = False
+    prometheus_enabled: bool = True
 
     gemini_api_key: str | None = None
     gemini_cv_model: str = "gemini-3.5-flash"

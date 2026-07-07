@@ -10,6 +10,7 @@ from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.db import init_db
 from app.core.errors import AppError, app_error_handler, validation_error_handler
+from app.core.logging import configure_logging
 
 rate_limit_buckets: dict[str, list[float]] = {}
 
@@ -25,6 +26,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    configure_logging()
     app = FastAPI(
         title=settings.app_name,
         version="0.1.0",
@@ -39,6 +41,22 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    if settings.otel_enabled:
+        try:
+            from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
+            FastAPIInstrumentor.instrument_app(app)
+        except Exception:
+            pass
+
+    if settings.prometheus_enabled:
+        try:
+            from prometheus_fastapi_instrumentator import Instrumentator
+
+            Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+        except Exception:
+            pass
 
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next):

@@ -194,8 +194,14 @@ Admin endpoints require an authenticated user with role `admin`.
 - `GET /v1/ops/readiness`
 - Returns database, storage directory, and Gemini configuration readiness.
 
+- `GET /v1/ops/liveness`
+- Returns a lightweight service liveness response.
+
 - `GET /v1/ops/metrics`
 - Admin-only operational counters mirroring the admin overview.
+
+- `GET /metrics`
+- Prometheus scrape endpoint when `PROMETHEUS_ENABLED=true`.
 
 ## Background tasks
 

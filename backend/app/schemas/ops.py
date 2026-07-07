@@ -12,6 +12,11 @@ class ReadinessResult(BaseModel):
     checks: list[ReadinessCheck] = Field(default_factory=list)
 
 
+class LivenessResult(BaseModel):
+    alive: bool
+    service: str
+
+
 class OpsMetrics(BaseModel):
     users_total: int
     cvs_total: int

@@ -21,7 +21,9 @@ This repository is now beyond a single-user demo, but it is still an MVP. Use th
 ## Operations
 
 - Use `GET /v1/ops/readiness` for readiness checks.
+- Use `GET /v1/ops/liveness` for lightweight liveness checks.
 - Use `GET /v1/ops/metrics` with admin auth for operational counters.
+- Scrape `/metrics` with Prometheus when `PROMETHEUS_ENABLED=true`.
 - Use `GET /v1/admin/*` endpoints to inspect users, CV scans, interviews, crawler runs, and jobs.
 - Back up Postgres and object/file storage regularly.
 - Monitor failed CV scans, failed crawl runs, interview failures, and missing Gemini API keys.

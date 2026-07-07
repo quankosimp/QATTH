@@ -19,3 +19,4 @@ def test_openapi_includes_core_contract_paths():
     assert "/v1/auth/logout" in paths
     assert "/v1/auth/password-reset/request" in paths
     assert "/v1/ops/readiness" in paths
+    assert "/v1/ops/liveness" in paths

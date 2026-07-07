@@ -6,10 +6,19 @@ from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.security import CurrentUser, require_admin
 from app.schemas.common import APIResponse, make_response
-from app.schemas.ops import OpsMetrics, ReadinessCheck, ReadinessResult
+from app.schemas.ops import LivenessResult, OpsMetrics, ReadinessCheck, ReadinessResult
 from app.services.admin import AdminService
 
 router = APIRouter(prefix="/ops", tags=["ops"])
+
+
+@router.get("/liveness", response_model=APIResponse[LivenessResult])
+def liveness(request: Request) -> APIResponse[LivenessResult]:
+    settings = get_settings()
+    return make_response(
+        LivenessResult(alive=True, service=settings.app_name),
+        request=request,
+    )
 
 
 @router.get("/readiness", response_model=APIResponse[ReadinessResult])
