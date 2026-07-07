@@ -176,3 +176,17 @@ Admin endpoints require an authenticated user with role `admin`.
 
 - `GET /v1/ops/metrics`
 - Admin-only operational counters mirroring the admin overview.
+
+## Background tasks
+
+- `POST /v1/tasks`
+- Enqueues a background task. Initial supported type is `noop`; production task types are wired incrementally.
+
+- `GET /v1/tasks`
+- Lists tasks for the current user, or all tasks for admin users.
+
+- `GET /v1/tasks/{task_id}`
+- Returns task status, attempts, result payload, and error payload.
+
+- `POST /v1/tasks/{task_id}/retry`
+- Retries a failed/completed task when attempts remain.

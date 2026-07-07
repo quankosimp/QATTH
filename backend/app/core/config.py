@@ -12,6 +12,9 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./data/qatth.db"
     auto_create_tables: bool = False
+    redis_url: str = "redis://redis:6379/0"
+    celery_broker_url: str = "redis://redis:6379/0"
+    celery_result_backend: str = "redis://redis:6379/1"
 
     gemini_api_key: str | None = None
     gemini_cv_model: str = "gemini-3.5-flash"
