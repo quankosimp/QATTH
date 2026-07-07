@@ -16,6 +16,7 @@ from app.schemas.cv import (
     CVVersionRead,
 )
 from app.services.gemini import GeminiService
+from app.services.files import FileAssetService
 from app.services.storage import LocalStorage
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx"}
@@ -94,6 +95,17 @@ class CVScanService:
         record.parsed_profile = None
         record.raw_model_response = profile_payload
         record.warnings = profile.warnings
+        FileAssetService(db=self.db, current_user=current_user).create_asset(
+            user_id=current_user.id,
+            owner_type="cv",
+            owner_id=record.id,
+            original_file_name=stored.original_name,
+            content_type=stored.content_type,
+            size_bytes=stored.size_bytes,
+            storage_backend=stored.storage_backend,
+            storage_key=stored.storage_key,
+            local_path=str(stored.path),
+        )
         self._create_version(
             cv_id=record.id,
             user_id=current_user.id,

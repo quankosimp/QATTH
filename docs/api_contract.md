@@ -190,3 +190,11 @@ Admin endpoints require an authenticated user with role `admin`.
 
 - `POST /v1/tasks/{task_id}/retry`
 - Retries a failed/completed task when attempts remain.
+
+## Files
+
+- `GET /v1/files/{file_id}`
+- Returns file asset metadata for a user-owned or admin-accessible file.
+
+- `GET /v1/files/{file_id}/signed-url`
+- Returns a short-lived URL for downloading the object from S3-compatible storage. In local fallback mode, the URL is the local storage key.

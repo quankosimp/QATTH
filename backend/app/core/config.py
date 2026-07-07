@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     celery_broker_url: str = "redis://redis:6379/0"
     celery_result_backend: str = "redis://redis:6379/1"
 
+    storage_backend: str = "local"
+    s3_endpoint: str = "minio:9000"
+    s3_access_key: str = "qatthminio"
+    s3_secret_key: str = "qatthminiosecret"
+    s3_bucket: str = "qatth-assets"
+    s3_secure: bool = False
+
     gemini_api_key: str | None = None
     gemini_cv_model: str = "gemini-3.5-flash"
     gemini_evaluation_model: str = "gemini-3.5-flash"

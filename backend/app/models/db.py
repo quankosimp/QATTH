@@ -131,6 +131,22 @@ class BackgroundTask(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class FileAsset(Base):
+    __tablename__ = "file_assets"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    owner_type: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    owner_id: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
+    original_file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    storage_backend: Mapped[str] = mapped_column(String(40), nullable=False)
+    storage_key: Mapped[str] = mapped_column(Text, nullable=False)
+    local_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
 class InterviewSession(Base):
     __tablename__ = "interview_sessions"
 
