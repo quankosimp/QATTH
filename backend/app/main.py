@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from time import time
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
@@ -9,6 +10,8 @@ from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.db import init_db
 from app.core.errors import AppError, app_error_handler, validation_error_handler
+
+rate_limit_buckets: dict[str, list[float]] = {}
 
 
 @asynccontextmanager
@@ -44,6 +47,37 @@ def create_app() -> FastAPI:
         response = await call_next(request)
         response.headers["x-request-id"] = request_id
         return response
+
+    @app.middleware("http")
+    async def rate_limit_middleware(request: Request, call_next):
+        if not settings.rate_limit_enabled:
+            return await call_next(request)
+        client = request.client.host if request.client else "unknown"
+        bucket_key = f"{client}:{request.url.path}"
+        now = time()
+        window_start = now - 60
+        bucket = [item for item in rate_limit_buckets.get(bucket_key, []) if item >= window_start]
+        if len(bucket) >= settings.rate_limit_requests_per_minute:
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "data": None,
+                    "error": {
+                        "code": "RATE_LIMITED",
+                        "message": "Too many requests. Try again later.",
+                        "details": None,
+                    },
+                    "meta": {
+                        "request_id": getattr(request.state, "request_id", "unknown"),
+                        "version": "v1",
+                    },
+                },
+            )
+        bucket.append(now)
+        rate_limit_buckets[bucket_key] = bucket
+        return await call_next(request)
 
     @app.get("/", tags=["root"])
     def root():

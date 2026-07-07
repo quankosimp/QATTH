@@ -144,6 +144,20 @@ All REST endpoints return:
 - `DELETE /v1/privacy/me/data`
 - Deletes user-owned CVs, interviews, matches, interactions, consents, tokens, and deactivates the account.
 
+- `GET /v1/privacy/me/export`
+- Exports user-owned CVs, interviews, matches, job interactions, and consents.
+
+## Auth security
+
+- `POST /v1/auth/logout`
+- Revokes the current bearer token.
+
+- `POST /v1/auth/password-reset/request`
+- Creates a password reset token. Until email delivery is configured, local/dev returns the token in the API response.
+
+- `POST /v1/auth/password-reset/confirm`
+- Sets a new password and revokes active tokens.
+
 ## Admin
 
 Admin endpoints require an authenticated user with role `admin`.

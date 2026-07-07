@@ -5,8 +5,17 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
 from app.core.security import hash_password, hash_token, new_access_token, verify_password
-from app.models.db import AuthToken, User
-from app.schemas.auth import AuthResult, LoginRequest, RegisterRequest, UserRead
+from app.models.db import AuthToken, PasswordResetToken, User
+from app.schemas.auth import (
+    AuthResult,
+    LoginRequest,
+    PasswordResetConfirm,
+    PasswordResetConfirmResult,
+    PasswordResetRequest,
+    PasswordResetRequestResult,
+    RegisterRequest,
+    UserRead,
+)
 
 
 class AuthService:
@@ -52,6 +61,50 @@ class AuthService:
                 message="User account is inactive.",
             )
         return self._issue_token(user)
+
+    def logout(self, *, raw_token: str) -> bool:
+        token = self.db.scalar(select(AuthToken).where(AuthToken.token_hash == hash_token(raw_token)))
+        if token and token.revoked_at is None:
+            token.revoked_at = datetime.now(UTC)
+            self.db.commit()
+        return True
+
+    def request_password_reset(self, payload: PasswordResetRequest) -> PasswordResetRequestResult:
+        user = self.db.scalar(select(User).where(User.email == payload.email.lower()))
+        if not user:
+            return PasswordResetRequestResult(reset_requested=True, reset_token=None)
+
+        raw_token = new_access_token()
+        token = PasswordResetToken(
+            user_id=user.id,
+            token_hash=hash_token(raw_token),
+            expires_at=datetime.now(UTC) + timedelta(minutes=30),
+        )
+        self.db.add(token)
+        self.db.commit()
+        return PasswordResetRequestResult(reset_requested=True, reset_token=raw_token)
+
+    def confirm_password_reset(self, payload: PasswordResetConfirm) -> PasswordResetConfirmResult:
+        token = self.db.scalar(
+            select(PasswordResetToken).where(PasswordResetToken.token_hash == hash_token(payload.token))
+        )
+        now = datetime.now(UTC)
+        if not token or token.used_at is not None or token.expires_at <= now:
+            raise AppError(
+                status_code=400,
+                code="INVALID_PASSWORD_RESET_TOKEN",
+                message="Password reset token is invalid or expired.",
+            )
+
+        user = self.db.get(User, token.user_id)
+        if not user:
+            raise AppError(status_code=404, code="USER_NOT_FOUND", message="User was not found.")
+
+        user.password_hash = hash_password(payload.new_password)
+        token.used_at = now
+        self.db.query(AuthToken).filter(AuthToken.user_id == user.id).update({"revoked_at": now})
+        self.db.commit()
+        return PasswordResetConfirmResult(password_reset=True)
 
     def to_user_read(self, user: User) -> UserRead:
         return UserRead(

@@ -22,11 +22,13 @@ from app.schemas.profile import (
     ConsentPayload,
     ConsentRead,
     DeleteMyDataResult,
+    ExportMyDataResult,
     JobInteractionPayload,
     JobInteractionRead,
     JobPreferencePayload,
     JobPreferenceRead,
 )
+from app.services.audit import AuditService
 
 
 class ProfileService:
@@ -117,6 +119,12 @@ class ProfileService:
 
     def delete_my_data(self) -> DeleteMyDataResult:
         user_id = self.current_user.id
+        AuditService(db=self.db).record(
+            actor_user_id=user_id,
+            action="privacy.delete_my_data",
+            resource_type="user",
+            resource_id=user_id,
+        )
         cv_ids = list(self.db.scalars(select(CVRecord.id).where(CVRecord.user_id == user_id)).all())
         interview_ids = list(
             self.db.scalars(select(InterviewSession.id).where(InterviewSession.user_id == user_id)).all()
@@ -154,6 +162,73 @@ class ProfileService:
             deleted_matches=deleted_matches,
             deleted_interactions=deleted_interactions,
             user_deactivated=True,
+        )
+
+    def export_my_data(self) -> ExportMyDataResult:
+        user_id = self.current_user.id
+        cvs = [
+            {
+                "cv_id": cv.id,
+                "status": cv.scan_status,
+                "original_file_name": cv.original_file_name,
+                "profile": cv.parsed_profile,
+                "draft_profile": cv.raw_model_response,
+                "created_at": cv.created_at.isoformat() if cv.created_at else None,
+            }
+            for cv in self.db.scalars(select(CVRecord).where(CVRecord.user_id == user_id)).all()
+        ]
+        interviews = [
+            {
+                "interview_id": interview.id,
+                "cv_id": interview.cv_id,
+                "target_role": interview.target_role,
+                "status": interview.status,
+                "result": interview.result,
+            }
+            for interview in self.db.scalars(
+                select(InterviewSession).where(InterviewSession.user_id == user_id)
+            ).all()
+        ]
+        matches = [
+            {"match_id": match.id, "cv_id": match.cv_id, "results": match.results}
+            for match in self.db.scalars(select(MatchRun).where(MatchRun.user_id == user_id)).all()
+        ]
+        interactions = [
+            {
+                "interaction_id": interaction.id,
+                "job_id": interaction.job_id,
+                "action": interaction.action,
+                "note": interaction.note,
+            }
+            for interaction in self.db.scalars(
+                select(JobInteraction).where(JobInteraction.user_id == user_id)
+            ).all()
+        ]
+        consents = [
+            {
+                "consent_id": consent.id,
+                "consent_type": consent.consent_type,
+                "accepted": consent.accepted,
+                "created_at": consent.created_at.isoformat() if consent.created_at else None,
+            }
+            for consent in self.db.scalars(
+                select(ConsentRecord).where(ConsentRecord.user_id == user_id)
+            ).all()
+        ]
+        AuditService(db=self.db).record(
+            actor_user_id=user_id,
+            action="privacy.export_my_data",
+            resource_type="user",
+            resource_id=user_id,
+        )
+        self.db.commit()
+        return ExportMyDataResult(
+            user_id=user_id,
+            cvs=cvs,
+            interviews=interviews,
+            matches=matches,
+            job_interactions=interactions,
+            consents=consents,
         )
 
     def _get_or_create_preferences(self) -> UserJobPreference:

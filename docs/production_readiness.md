@@ -15,6 +15,7 @@ This repository is now beyond a single-user demo, but it is still an MVP. Use th
 - Require `consent_accepted=true` before CV scan.
 - Keep CV draft/final versions for auditability.
 - Use `DELETE /v1/privacy/me/data` to support account data deletion.
+- Use `GET /v1/privacy/me/export` to support user data export.
 - Do not log raw CV text, audio payloads, or access tokens.
 
 ## Operations
@@ -25,6 +26,7 @@ This repository is now beyond a single-user demo, but it is still an MVP. Use th
 - Back up Postgres and object/file storage regularly.
 - Monitor failed CV scans, failed crawl runs, interview failures, and missing Gemini API keys.
 - Monitor failed model runs and prompt/model versions through admin APIs.
+- Monitor audit logs for admin and privacy-sensitive actions.
 
 ## Known MVP limitations
 

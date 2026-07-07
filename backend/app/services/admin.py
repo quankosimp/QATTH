@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import AppError
 from app.models.db import CVRecord, CrawlRun, InterviewSession, JobPosting, User
 from app.services.model_runs import ModelRunService
+from app.services.audit import AuditService
 from app.schemas.admin import (
     AdminCVScanList,
     AdminCVScanRead,
@@ -57,6 +58,13 @@ class AdminService:
         if not user:
             raise AppError(status_code=404, code="USER_NOT_FOUND", message="User was not found.")
         user.is_active = is_active
+        AuditService(db=self.db).record(
+            actor_user_id=None,
+            action="admin.update_user_status",
+            resource_type="user",
+            resource_id=user_id,
+            metadata={"is_active": is_active},
+        )
         self.db.commit()
         self.db.refresh(user)
         return UserRead(
