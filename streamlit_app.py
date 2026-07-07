@@ -13,6 +13,9 @@ st.set_page_config(page_title="QATTH Career Demo", page_icon="Q", layout="wide")
 def init_state() -> None:
     defaults = {
         "cv_id": None,
+        "cv_status": None,
+        "cv_draft_profile": None,
+        "cv_draft_json": "",
         "cv_profile": None,
         "interview_id": None,
         "messages": [],
@@ -45,6 +48,11 @@ def unwrap_response(response: httpx.Response) -> Any:
 def post_json(path: str, payload: dict[str, Any]) -> Any:
     with httpx.Client(timeout=60.0) as client:
         return unwrap_response(client.post(f"{api_base()}{path}", json=payload))
+
+
+def put_json(path: str, payload: dict[str, Any]) -> Any:
+    with httpx.Client(timeout=60.0) as client:
+        return unwrap_response(client.put(f"{api_base()}{path}", json=payload))
 
 
 def get_json(path: str) -> Any:
@@ -115,16 +123,58 @@ def main() -> None:
                 with httpx.Client(timeout=120.0) as client:
                     result = unwrap_response(client.post(f"{base}/v1/cvs/scan", files=files, data=data))
                 st.session_state.cv_id = result["cv_id"]
-                st.session_state.cv_profile = result["profile"]
-                st.success(f"CV scanned: {result['cv_id']}")
+                st.session_state.cv_status = result["status"]
+                st.session_state.cv_draft_profile = result["draft_profile"]
+                st.session_state.cv_draft_json = json.dumps(
+                    result["draft_profile"],
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                st.session_state.cv_profile = None
+                st.session_state.interview_id = None
+                st.session_state.interview_result = None
+                st.session_state.match_items = []
+                st.success(f"CV scanned as draft: {result['cv_id']}")
+
+        if st.session_state.cv_draft_profile and st.session_state.cv_status != "completed":
+            st.subheader("Review and edit scanned JSON")
+            edited_json = st.text_area(
+                "Edit CV JSON before saving to database",
+                key="cv_draft_json",
+                height=520,
+            )
+            col_save, col_preview = st.columns([1, 1])
+            with col_save:
+                if st.button("Save edited CV to database"):
+                    try:
+                        edited_profile = json.loads(edited_json)
+                        result = put_json(
+                            f"/v1/cvs/{st.session_state.cv_id}/profile",
+                            edited_profile,
+                        )
+                    except json.JSONDecodeError as exc:
+                        st.error(f"Invalid JSON: {exc}")
+                    except Exception as exc:
+                        st.error(str(exc))
+                    else:
+                        st.session_state.cv_status = result["status"]
+                        st.session_state.cv_profile = result["profile"]
+                        st.success("Edited CV profile saved.")
+            with col_preview:
+                if st.button("Preview edited JSON"):
+                    try:
+                        st.json(json.loads(edited_json))
+                    except json.JSONDecodeError as exc:
+                        st.error(f"Invalid JSON: {exc}")
 
         if st.session_state.cv_profile:
+            st.subheader("Saved CV profile")
             render_profile(st.session_state.cv_profile)
 
     with tab_interview:
         st.header("Virtual interview")
-        if not st.session_state.cv_id:
-            st.info("Scan a CV first.")
+        if not st.session_state.cv_profile:
+            st.info("Scan a CV and save the reviewed JSON profile first.")
         else:
             if st.button("Create interview room"):
                 result = post_json(
@@ -179,7 +229,7 @@ def main() -> None:
                 result = post_json("/v1/jobs/crawl-runs", {"source": "seed", "query": "it", "max_pages": 1})
                 st.success(f"Seeded {result['jobs_found']} jobs.")
         with col_b:
-            if st.button("Generate matches", disabled=not st.session_state.cv_id):
+            if st.button("Generate matches", disabled=not st.session_state.cv_profile):
                 result = post_json(
                     "/v1/matches",
                     {

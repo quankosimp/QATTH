@@ -65,6 +65,13 @@ class CVProfile(BaseModel):
 class CVScanResult(BaseModel):
     cv_id: str
     status: str
+    draft_profile: CVProfile
+    warnings: list[str] = Field(default_factory=list)
+
+
+class CVSaveResult(BaseModel):
+    cv_id: str
+    status: str
     profile: CVProfile
     warnings: list[str] = Field(default_factory=list)
 
@@ -73,5 +80,6 @@ class CVReadResult(BaseModel):
     cv_id: str
     status: str
     original_file_name: str
+    draft_profile: CVProfile | None = None
     profile: CVProfile | None = None
     warnings: list[str] = Field(default_factory=list)

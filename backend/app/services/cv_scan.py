@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
 from app.models.db import CVRecord
-from app.schemas.cv import CVProfile, CVReadResult, CVScanResult
+from app.schemas.cv import CVProfile, CVReadResult, CVSaveResult, CVScanResult
 from app.services.gemini import GeminiService
 from app.services.storage import LocalStorage
 
@@ -77,14 +77,45 @@ class CVScanService:
                 details={"reason": str(exc)},
             ) from exc
 
-        record.scan_status = "completed"
-        record.parsed_profile = profile.model_dump(mode="json")
+        record.scan_status = "pending_review"
+        record.parsed_profile = None
         record.raw_model_response = profile_payload
         record.warnings = profile.warnings
         self.db.commit()
         self.db.refresh(record)
 
         return CVScanResult(
+            cv_id=record.id,
+            status=record.scan_status,
+            draft_profile=profile,
+            warnings=profile.warnings,
+        )
+
+    def save_profile(self, *, cv_id: str, profile: CVProfile) -> CVSaveResult:
+        record = self.db.get(CVRecord, cv_id)
+        if not record:
+            raise AppError(
+                status_code=404,
+                code="CV_NOT_FOUND",
+                message="CV was not found.",
+                details={"cv_id": cv_id},
+            )
+
+        if record.scan_status == "failed":
+            raise AppError(
+                status_code=409,
+                code="CV_SCAN_FAILED",
+                message="Cannot save a profile for a failed CV scan.",
+                details={"failure_reason": record.failure_reason},
+            )
+
+        record.scan_status = "completed"
+        record.parsed_profile = profile.model_dump(mode="json")
+        record.warnings = profile.warnings
+        self.db.commit()
+        self.db.refresh(record)
+
+        return CVSaveResult(
             cv_id=record.id,
             status=record.scan_status,
             profile=profile,
@@ -101,11 +132,15 @@ class CVScanService:
                 details={"cv_id": cv_id},
             )
 
+        draft_profile = (
+            CVProfile.model_validate(record.raw_model_response) if record.raw_model_response else None
+        )
         profile = CVProfile.model_validate(record.parsed_profile) if record.parsed_profile else None
         return CVReadResult(
             cv_id=record.id,
             status=record.scan_status,
             original_file_name=record.original_file_name,
+            draft_profile=draft_profile,
             profile=profile,
             warnings=record.warnings or [],
         )

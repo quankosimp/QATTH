@@ -22,10 +22,15 @@ All REST endpoints return:
 - `file`: PDF or DOCX
 - `target_role`: optional string
 - `language`: `vi` or `en`
-- Returns `cv_id`, scan status, and `CVProfile`.
+- Returns `cv_id`, status `pending_review`, and `draft_profile`.
+- The scan result is not saved as the final `profile` until the user confirms edited JSON.
+
+- `PUT /v1/cvs/{cv_id}/profile`
+- Body: edited `CVProfile` JSON.
+- Saves the reviewed profile to the database and changes status to `completed`.
 
 - `GET /v1/cvs/{cv_id}`
-- Returns stored parsed CV.
+- Returns `draft_profile` when pending review and `profile` after completion.
 
 ## Interviews
 
