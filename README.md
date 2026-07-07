@@ -89,6 +89,9 @@ Not included in this branch:
 
 - Production frontend application
 - Temporary Streamlit demo
+- Cloud/production deployment ownership
+- Domain, HTTPS, DNS, reverse proxy, cloud networking
+- Production backup/monitoring operations
 
 The temporary Streamlit demo lives on branch:
 
@@ -141,6 +144,12 @@ Run with Docker Compose:
 cp .env.example .env
 docker compose up --build
 ```
+
+Docker handoff scope:
+
+- This repository provides Dockerfile and Docker Compose services needed to run the backend stack.
+- The backend owner is responsible for keeping these containers buildable and configurable through `.env`.
+- The deployment owner is responsible for production hosting, secrets injection, HTTPS, domain/DNS, reverse proxy, autoscaling, backups, monitoring, and incident response.
 
 Services:
 
@@ -218,9 +227,13 @@ This is an MVP foundation for a real product. It is intentionally backend-first 
 
 Important remaining production work:
 
-- Add Alembic migrations.
-- Move long-running tasks to a worker queue.
-- Replace local file storage with object storage.
-- Add production monitoring and error tracking.
+- Wire concrete CV scan, interview evaluation, job crawl, and match generation jobs into the Celery task system.
 - Improve crawler sources through official APIs, feeds, or partnerships.
 - Add automated integration tests for the full CV to interview to job matching flow.
+- Add production email delivery for password reset instead of returning local/dev reset tokens.
+- Add deployment-team runbook after the target hosting platform is chosen.
+
+Deployment ownership note:
+
+- Backend responsibility: application code, API contract, Dockerfile, Compose services, migrations, and environment variable contract.
+- Deployment responsibility: infrastructure platform, production secrets, TLS/HTTPS, domain/DNS, ingress/reverse proxy, scaling, backup/restore, observability stack, and production runbook.
