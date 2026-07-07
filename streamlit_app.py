@@ -1,4 +1,5 @@
 import json
+import os
 from typing import Any
 
 import httpx
@@ -23,7 +24,8 @@ def init_state() -> None:
 
 
 def api_base() -> str:
-    return st.sidebar.text_input("Backend URL", value="http://localhost:8000").rstrip("/")
+    default = os.getenv("API_BASE_URL", "http://localhost:8000")
+    return st.session_state.get("api_base_url", default).rstrip("/")
 
 
 def ws_base(http_base: str) -> str:
@@ -87,6 +89,8 @@ def main() -> None:
     st.title("QATTH Career Platform Demo")
     st.caption("Local Streamlit client for the FastAPI backend contract.")
 
+    default_api_base = os.getenv("API_BASE_URL", "http://localhost:8000")
+    st.sidebar.text_input("Backend URL", value=default_api_base, key="api_base_url")
     base = api_base()
     st.sidebar.write("API docs:", f"{base}/docs")
 

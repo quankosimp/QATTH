@@ -53,6 +53,29 @@ Then set:
 DATABASE_URL=postgresql+psycopg://qatth:qatth@localhost:5432/qatth
 ```
 
+## Docker Compose deployment
+
+Create `.env` first:
+
+```bash
+cp .env.example .env
+```
+
+Run the full local deployment:
+
+```bash
+docker compose up --build
+```
+
+Services:
+
+- FastAPI: `http://localhost:8000`
+- Swagger UI: `http://localhost:8000/docs`
+- Streamlit demo: `http://localhost:8501`
+- PostgreSQL + pgvector: `localhost:5432`
+
+For Gemini-backed CV scan and Live interview, set `GEMINI_API_KEY` in `.env` before starting Compose.
+
 ## Development rule
 
 This repo is implemented in incremental parts. Each major product part should be committed before starting the next one.
