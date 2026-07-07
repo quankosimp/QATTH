@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.db import get_db
 from app.core.errors import AppError
+from app.core.security import CurrentUser, get_current_user, get_websocket_user
 from app.schemas.common import APIResponse, make_response
 from app.schemas.interview import (
     InterviewCreateRequest,
@@ -22,8 +23,9 @@ def create_interview(
     request: Request,
     payload: InterviewCreateRequest,
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> APIResponse[InterviewCreateResult]:
-    result = InterviewService(db=db).create(
+    result = InterviewService(db=db, current_user=current_user).create(
         cv_id=payload.cv_id,
         target_role=payload.target_role,
         language=payload.language,
@@ -37,10 +39,11 @@ async def interview_stream(
     interview_id: str,
     db: Session = Depends(get_db),
 ) -> None:
-    service = InterviewService(db=db)
     await websocket.accept()
 
     try:
+        current_user = get_websocket_user(websocket=websocket, db=db)
+        service = InterviewService(db=db, current_user=current_user)
         service.mark_live(interview_id=interview_id)
         settings = get_settings()
 
@@ -73,8 +76,9 @@ async def end_interview(
     request: Request,
     interview_id: str,
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> APIResponse[InterviewEndResult]:
-    result = await InterviewService(db=db).end(interview_id=interview_id)
+    result = await InterviewService(db=db, current_user=current_user).end(interview_id=interview_id)
     return make_response(result, request=request)
 
 
@@ -83,6 +87,7 @@ def get_interview_result(
     request: Request,
     interview_id: str,
     db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
 ) -> APIResponse[InterviewResultRead]:
-    result = InterviewService(db=db).get_result(interview_id=interview_id)
+    result = InterviewService(db=db, current_user=current_user).get_result(interview_id=interview_id)
     return make_response(result, request=request)

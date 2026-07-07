@@ -12,11 +12,10 @@ RUN apt-get update \
 
 COPY pyproject.toml README.md ./
 COPY backend ./backend
-COPY streamlit_app.py ./streamlit_app.py
 
 RUN pip install --upgrade pip \
     && pip install -e .
 
-EXPOSE 8000 8501
+EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--app-dir", "backend"]

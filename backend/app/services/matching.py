@@ -2,7 +2,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
-from app.models.db import CVRecord, InterviewSession, JobPosting, MatchRun
+from app.core.security import CurrentUser
+from app.models.db import CVRecord, InterviewSession, JobPosting, MatchRun, UserJobPreference
 from app.schemas.cv import CVProfile
 from app.schemas.interview import InterviewResult
 from app.schemas.jobs import JobPostingRead
@@ -11,8 +12,15 @@ from app.services.embedding import EmbeddingService
 
 
 class MatchingService:
-    def __init__(self, *, db: Session, embedding: EmbeddingService | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        db: Session,
+        current_user: CurrentUser | None = None,
+        embedding: EmbeddingService | None = None,
+    ) -> None:
         self.db = db
+        self.current_user = current_user
         self.embedding = embedding or EmbeddingService()
 
     def create_match(
@@ -31,9 +39,15 @@ class MatchingService:
                 code="CV_NOT_READY",
                 message="CV was not found or has not been scanned successfully.",
             )
+        self._ensure_owner(owner_id=cv_record.user_id, resource="CV")
 
         profile = CVProfile.model_validate(cv_record.parsed_profile or {})
         interview_result = self._load_interview_result(interview_id)
+        preference = self._load_preferences()
+        if not location and preference and preference.locations:
+            location = preference.locations[0]
+        if not working_model and preference and preference.working_models:
+            working_model = preference.working_models[0]
         jobs = self._load_jobs(location=location, working_model=working_model)
 
         if not jobs:
@@ -58,6 +72,7 @@ class MatchingService:
         items = items[:limit]
 
         match_run = MatchRun(
+            user_id=self.current_user.id if self.current_user else cv_record.user_id,
             cv_id=cv_id,
             interview_id=interview_id,
             results=[item.model_dump(mode="json") for item in items],
@@ -81,6 +96,7 @@ class MatchingService:
                 code="MATCH_NOT_FOUND",
                 message="Match run was not found.",
             )
+        self._ensure_owner(owner_id=match_run.user_id, resource="Match run")
         return MatchRunResult(
             match_id=match_run.id,
             cv_id=match_run.cv_id,
@@ -98,7 +114,16 @@ class MatchingService:
                 code="INTERVIEW_NOT_FOUND",
                 message="Interview was not found.",
             )
+        self._ensure_owner(owner_id=session.user_id, resource="Interview")
         return InterviewResult.model_validate(session.result) if session.result else None
+
+    def _ensure_owner(self, *, owner_id: str | None, resource: str) -> None:
+        if self.current_user and not self.current_user.is_admin and owner_id not in {None, self.current_user.id}:
+            raise AppError(
+                status_code=404,
+                code=f"{resource.upper().replace(' ', '_')}_NOT_FOUND",
+                message=f"{resource} was not found.",
+            )
 
     def _load_jobs(self, *, location: str | None, working_model: str | None) -> list[JobPosting]:
         statement = select(JobPosting)
@@ -107,6 +132,13 @@ class MatchingService:
         if working_model:
             statement = statement.where(JobPosting.working_model == working_model)
         return list(self.db.scalars(statement).all())
+
+    def _load_preferences(self) -> UserJobPreference | None:
+        if not self.current_user:
+            return None
+        return self.db.scalar(
+            select(UserJobPreference).where(UserJobPreference.user_id == self.current_user.id)
+        )
 
     def _score_job(
         self,

@@ -17,15 +17,28 @@ All REST endpoints return:
 
 ## CV
 
+- `GET /v1/cvs`
+- Returns CVs owned by the authenticated user, including latest version number.
+
 - `POST /v1/cvs/scan`
 - Multipart form fields:
 - `file`: PDF or DOCX
 - `target_role`: optional string
 - `language`: `vi` or `en`
-- Returns `cv_id`, scan status, and `CVProfile`.
+- `consent_accepted`: must be `true`
+- Returns `cv_id`, status `pending_review`, and `draft_profile`.
+- The scan result is not saved as the final `profile` until the user confirms edited JSON.
+
+- `PUT /v1/cvs/{cv_id}/profile`
+- Body: edited `CVProfile` JSON.
+- Saves the reviewed profile to the database and changes status to `completed`.
+- Creates a new `final` CV version.
+
+- `GET /v1/cvs/{cv_id}/versions`
+- Returns LLM draft and user-reviewed profile versions.
 
 - `GET /v1/cvs/{cv_id}`
-- Returns stored parsed CV.
+- Returns `draft_profile` when pending review and `profile` after completion.
 
 ## Interviews
 
@@ -107,3 +120,59 @@ All REST endpoints return:
 
 - `GET /v1/matches/{match_id}`
 - Reloads a previous match run.
+
+## Preferences, feedback, privacy
+
+- `GET /v1/preferences/jobs`
+- Returns authenticated user's job search preferences.
+
+- `PUT /v1/preferences/jobs`
+- Saves target roles, locations, working models, salary expectation, and preferred skills.
+
+- `POST /v1/jobs/{job_id}/interactions`
+- Records `saved`, `applied`, `relevant`, `not_relevant`, or `hidden` job feedback.
+
+- `GET /v1/jobs/interactions`
+- Lists user's job interactions.
+
+- `POST /v1/privacy/consents`
+- Records consent decisions.
+
+- `GET /v1/privacy/consents`
+- Lists consent history.
+
+- `DELETE /v1/privacy/me/data`
+- Deletes user-owned CVs, interviews, matches, interactions, consents, tokens, and deactivates the account.
+
+## Admin
+
+Admin endpoints require an authenticated user with role `admin`.
+
+- `GET /v1/admin/overview`
+- Returns operational counts for users, CVs, interviews, jobs, and failed crawl runs.
+
+- `GET /v1/admin/users`
+- Lists users.
+
+- `PATCH /v1/admin/users/{user_id}/status`
+- Activates or deactivates a user.
+
+- `GET /v1/admin/cv-scans`
+- Lists CV scan status and failures.
+
+- `GET /v1/admin/interviews`
+- Lists interview sessions.
+
+- `GET /v1/admin/crawl-runs`
+- Lists crawler runs and failures.
+
+- `GET /v1/admin/jobs`
+- Lists stored jobs.
+
+## Ops
+
+- `GET /v1/ops/readiness`
+- Returns database, storage directory, and Gemini configuration readiness.
+
+- `GET /v1/ops/metrics`
+- Admin-only operational counters mirroring the admin overview.
