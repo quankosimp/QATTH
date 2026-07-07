@@ -144,6 +144,20 @@ All REST endpoints return:
 - `DELETE /v1/privacy/me/data`
 - Deletes user-owned CVs, interviews, matches, interactions, consents, tokens, and deactivates the account.
 
+- `GET /v1/privacy/me/export`
+- Exports user-owned CVs, interviews, matches, job interactions, and consents.
+
+## Auth security
+
+- `POST /v1/auth/logout`
+- Revokes the current bearer token.
+
+- `POST /v1/auth/password-reset/request`
+- Creates a password reset token. Until email delivery is configured, local/dev returns the token in the API response.
+
+- `POST /v1/auth/password-reset/confirm`
+- Sets a new password and revokes active tokens.
+
 ## Admin
 
 Admin endpoints require an authenticated user with role `admin`.
@@ -169,10 +183,44 @@ Admin endpoints require an authenticated user with role `admin`.
 - `GET /v1/admin/jobs`
 - Lists stored jobs.
 
+- `GET /v1/admin/model-runs`
+- Lists LLM/model calls, status, latency, schema, output metadata, and errors.
+
+- `POST /v1/admin/model-runs/{run_id}/retry`
+- Marks a failed model run as retry requested for operator follow-up.
+
 ## Ops
 
 - `GET /v1/ops/readiness`
 - Returns database, storage directory, and Gemini configuration readiness.
 
+- `GET /v1/ops/liveness`
+- Returns a lightweight service liveness response.
+
 - `GET /v1/ops/metrics`
 - Admin-only operational counters mirroring the admin overview.
+
+- `GET /metrics`
+- Prometheus scrape endpoint when `PROMETHEUS_ENABLED=true`.
+
+## Background tasks
+
+- `POST /v1/tasks`
+- Enqueues a background task. Initial supported type is `noop`; production task types are wired incrementally.
+
+- `GET /v1/tasks`
+- Lists tasks for the current user, or all tasks for admin users.
+
+- `GET /v1/tasks/{task_id}`
+- Returns task status, attempts, result payload, and error payload.
+
+- `POST /v1/tasks/{task_id}/retry`
+- Retries a failed/completed task when attempts remain.
+
+## Files
+
+- `GET /v1/files/{file_id}`
+- Returns file asset metadata for a user-owned or admin-accessible file.
+
+- `GET /v1/files/{file_id}/signed-url`
+- Returns a short-lived URL for downloading the object from S3-compatible storage. In local fallback mode, the URL is the local storage key.

@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
 from app.models.db import CVRecord, CrawlRun, InterviewSession, JobPosting, User
+from app.services.model_runs import ModelRunService
+from app.services.audit import AuditService
 from app.schemas.admin import (
     AdminCVScanList,
     AdminCVScanRead,
@@ -11,6 +13,7 @@ from app.schemas.admin import (
     AdminInterviewList,
     AdminInterviewRead,
     AdminJobList,
+    AdminModelRunList,
     AdminOverview,
     AdminUserList,
 )
@@ -55,6 +58,13 @@ class AdminService:
         if not user:
             raise AppError(status_code=404, code="USER_NOT_FOUND", message="User was not found.")
         user.is_active = is_active
+        AuditService(db=self.db).record(
+            actor_user_id=None,
+            action="admin.update_user_status",
+            resource_type="user",
+            resource_id=user_id,
+            metadata={"is_active": is_active},
+        )
         self.db.commit()
         self.db.refresh(user)
         return UserRead(
@@ -157,6 +167,13 @@ class AdminService:
             ],
             total=len(jobs),
         )
+
+    def list_model_runs(self, *, status: str | None = None, run_type: str | None = None) -> AdminModelRunList:
+        result = ModelRunService(db=self.db).list(status=status, run_type=run_type)
+        return AdminModelRunList(items=result.items, total=result.total)
+
+    def retry_model_run(self, *, run_id: str):
+        return ModelRunService(db=self.db).mark_retry_requested(run_id=run_id)
 
     def _count(self, model) -> int:
         return self.db.scalar(select(func.count()).select_from(model)) or 0

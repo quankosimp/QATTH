@@ -8,6 +8,7 @@ from app.schemas.profile import (
     ConsentPayload,
     ConsentRead,
     DeleteMyDataResult,
+    ExportMyDataResult,
     JobInteractionPayload,
     JobInteractionRead,
     JobPreferencePayload,
@@ -92,4 +93,14 @@ def delete_my_data(
     current_user: CurrentUser = Depends(get_current_user),
 ) -> APIResponse[DeleteMyDataResult]:
     result = ProfileService(db=db, current_user=current_user).delete_my_data()
+    return make_response(result, request=request)
+
+
+@router.get("/privacy/me/export", response_model=APIResponse[ExportMyDataResult])
+def export_my_data(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+) -> APIResponse[ExportMyDataResult]:
+    result = ProfileService(db=db, current_user=current_user).export_my_data()
     return make_response(result, request=request)

@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from app.schemas.auth import UserRead
+from app.schemas.ai import ModelRunRead
 from app.schemas.jobs import JobPostingRead
 
 
@@ -73,4 +74,9 @@ class AdminCrawlRunList(BaseModel):
 
 class AdminJobList(BaseModel):
     items: list[JobPostingRead]
+    total: int
+
+
+class AdminModelRunList(BaseModel):
+    items: list[ModelRunRead]
     total: int

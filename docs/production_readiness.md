@@ -15,19 +15,24 @@ This repository is now beyond a single-user demo, but it is still an MVP. Use th
 - Require `consent_accepted=true` before CV scan.
 - Keep CV draft/final versions for auditability.
 - Use `DELETE /v1/privacy/me/data` to support account data deletion.
+- Use `GET /v1/privacy/me/export` to support user data export.
 - Do not log raw CV text, audio payloads, or access tokens.
 
 ## Operations
 
 - Use `GET /v1/ops/readiness` for readiness checks.
+- Use `GET /v1/ops/liveness` for lightweight liveness checks.
 - Use `GET /v1/ops/metrics` with admin auth for operational counters.
+- Scrape `/metrics` with Prometheus when `PROMETHEUS_ENABLED=true`.
 - Use `GET /v1/admin/*` endpoints to inspect users, CV scans, interviews, crawler runs, and jobs.
 - Back up Postgres and object/file storage regularly.
 - Monitor failed CV scans, failed crawl runs, interview failures, and missing Gemini API keys.
+- Monitor failed model runs and prompt/model versions through admin APIs.
+- Monitor audit logs for admin and privacy-sensitive actions.
 
 ## Known MVP limitations
 
-- Database migrations are not yet implemented; production should add Alembic before schema changes after launch.
+- Database migrations use Alembic. New schema changes must be shipped through explicit revisions.
 - Long-running work is still synchronous; production should move CV scan, evaluation, crawling, and embedding into a worker queue.
 - Local file storage is acceptable for demo only; production should use S3-compatible object storage.
 - The crawler has a robots.txt guard but should be replaced with official APIs, feeds, or partner integrations where possible.
@@ -35,7 +40,6 @@ This repository is now beyond a single-user demo, but it is still an MVP. Use th
 
 ## Recommended next engineering work
 
-- Add Alembic migrations.
 - Add worker queue and scheduler.
 - Add centralized logs, metrics scraping, and error tracking.
 - Add object storage with signed URLs.

@@ -11,6 +11,21 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/v1"
 
     database_url: str = "sqlite:///./data/qatth.db"
+    auto_create_tables: bool = False
+    redis_url: str = "redis://redis:6379/0"
+    celery_broker_url: str = "redis://redis:6379/0"
+    celery_result_backend: str = "redis://redis:6379/1"
+
+    storage_backend: str = "local"
+    s3_endpoint: str = "minio:9000"
+    s3_access_key: str = "qatthminio"
+    s3_secret_key: str = "qatthminiosecret"
+    s3_bucket: str = "qatth-assets"
+    s3_secure: bool = False
+    rate_limit_enabled: bool = True
+    rate_limit_requests_per_minute: int = 120
+    otel_enabled: bool = False
+    prometheus_enabled: bool = True
 
     gemini_api_key: str | None = None
     gemini_cv_model: str = "gemini-3.5-flash"

@@ -16,6 +16,8 @@ from app.schemas.cv import (
     CVVersionRead,
 )
 from app.services.gemini import GeminiService
+from app.services.files import FileAssetService
+from app.services.model_runs import ModelRunService
 from app.services.storage import LocalStorage
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx"}
@@ -65,6 +67,21 @@ class CVScanService:
         self.db.commit()
         self.db.refresh(record)
 
+        model_timer = ModelRunService(db=self.db).start(
+            user_id=current_user.id,
+            run_type="cv_scan",
+            provider="gemini",
+            model=self.gemini.settings.gemini_cv_model,
+            input_payload={
+                "cv_id": record.id,
+                "file_name": stored.original_name,
+                "content_type": stored.content_type,
+                "target_role": target_role,
+                "language": language,
+            },
+            output_schema="CVProfile",
+        )
+
         try:
             profile_payload = await self.gemini.extract_cv_profile(
                 file_path=stored.path,
@@ -74,12 +91,15 @@ class CVScanService:
                 language=language,
             )
             profile = CVProfile.model_validate(profile_payload)
+            model_timer.complete(output_json=profile.model_dump(mode="json"))
         except AppError as exc:
+            model_timer.fail(error=exc.message)
             record.scan_status = "failed"
             record.failure_reason = exc.message
             self.db.commit()
             raise
         except Exception as exc:
+            model_timer.fail(error=str(exc))
             record.scan_status = "failed"
             record.failure_reason = str(exc)
             self.db.commit()
@@ -94,6 +114,17 @@ class CVScanService:
         record.parsed_profile = None
         record.raw_model_response = profile_payload
         record.warnings = profile.warnings
+        FileAssetService(db=self.db, current_user=current_user).create_asset(
+            user_id=current_user.id,
+            owner_type="cv",
+            owner_id=record.id,
+            original_file_name=stored.original_name,
+            content_type=stored.content_type,
+            size_bytes=stored.size_bytes,
+            storage_backend=stored.storage_backend,
+            storage_key=stored.storage_key,
+            local_path=str(stored.path),
+        )
         self._create_version(
             cv_id=record.id,
             user_id=current_user.id,
