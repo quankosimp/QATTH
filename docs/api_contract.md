@@ -168,3 +168,11 @@ Admin endpoints require an authenticated user with role `admin`.
 
 - `GET /v1/admin/jobs`
 - Lists stored jobs.
+
+## Ops
+
+- `GET /v1/ops/readiness`
+- Returns database, storage directory, and Gemini configuration readiness.
+
+- `GET /v1/ops/metrics`
+- Admin-only operational counters mirroring the admin overview.

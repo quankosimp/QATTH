@@ -83,3 +83,7 @@ This repo is implemented in incremental parts. Each major product part should be
 ## API contract
 
 See `docs/api_contract.md` for the frontend-facing REST/WebSocket contract summary.
+
+## Production readiness
+
+See `docs/production_readiness.md` for required operational, privacy, and deployment checks before using real student data.

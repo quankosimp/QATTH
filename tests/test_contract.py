@@ -15,3 +15,4 @@ def test_openapi_includes_core_contract_paths():
     assert "/v1/admin/overview" in paths
     assert "/v1/preferences/jobs" in paths
     assert "/v1/privacy/me/data" in paths
+    assert "/v1/ops/readiness" in paths
