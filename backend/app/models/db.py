@@ -30,6 +30,21 @@ class CVRecord(Base):
     )
 
 
+class CVVersion(Base):
+    __tablename__ = "cv_versions"
+    __table_args__ = (UniqueConstraint("cv_id", "version_number", name="uq_cv_version_number"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    cv_id: Mapped[str] = mapped_column(ForeignKey("cv_records.id"), nullable=False, index=True)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False)
+    source: Mapped[str] = mapped_column(String(80), nullable=False)
+    profile_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    edit_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
 class User(Base):
     __tablename__ = "users"
 

@@ -1,10 +1,20 @@
 from fastapi import UploadFile
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
 from app.core.security import CurrentUser
-from app.models.db import CVRecord
-from app.schemas.cv import CVProfile, CVReadResult, CVSaveResult, CVScanResult
+from app.models.db import CVRecord, CVVersion
+from app.schemas.cv import (
+    CVListResult,
+    CVProfile,
+    CVReadResult,
+    CVSaveResult,
+    CVScanResult,
+    CVSummary,
+    CVVersionListResult,
+    CVVersionRead,
+)
 from app.services.gemini import GeminiService
 from app.services.storage import LocalStorage
 
@@ -84,6 +94,14 @@ class CVScanService:
         record.parsed_profile = None
         record.raw_model_response = profile_payload
         record.warnings = profile.warnings
+        self._create_version(
+            cv_id=record.id,
+            user_id=current_user.id,
+            profile=profile,
+            status="draft",
+            source="llm_scan",
+            edit_note="Initial LLM scan draft.",
+        )
         self.db.commit()
         self.db.refresh(record)
 
@@ -100,6 +118,7 @@ class CVScanService:
         cv_id: str,
         profile: CVProfile,
         current_user: CurrentUser,
+        edit_note: str | None = None,
     ) -> CVSaveResult:
         record = self.db.get(CVRecord, cv_id)
         self._ensure_cv_access(record=record, cv_id=cv_id, current_user=current_user)
@@ -115,15 +134,47 @@ class CVScanService:
         record.scan_status = "completed"
         record.parsed_profile = profile.model_dump(mode="json")
         record.warnings = profile.warnings
+        version = self._create_version(
+            cv_id=record.id,
+            user_id=record.user_id,
+            profile=profile,
+            status="final",
+            source="user_review",
+            edit_note=edit_note,
+        )
         self.db.commit()
         self.db.refresh(record)
+        self.db.refresh(version)
 
         return CVSaveResult(
             cv_id=record.id,
             status=record.scan_status,
+            version_id=version.id,
+            version_number=version.version_number,
             profile=profile,
             warnings=profile.warnings,
         )
+
+    def list(self, *, current_user: CurrentUser) -> CVListResult:
+        statement = select(CVRecord)
+        if not current_user.is_admin:
+            statement = statement.where(CVRecord.user_id == current_user.id)
+
+        records = list(self.db.scalars(statement.order_by(CVRecord.created_at.desc())).all())
+        items = []
+        for record in records:
+            latest_version_number = self._latest_version_number(cv_id=record.id)
+            profile = CVProfile.model_validate(record.parsed_profile) if record.parsed_profile else None
+            items.append(
+                CVSummary(
+                    cv_id=record.id,
+                    status=record.scan_status,
+                    original_file_name=record.original_file_name,
+                    latest_version_number=latest_version_number,
+                    active_profile_name=profile.name if profile else None,
+                )
+            )
+        return CVListResult(items=items, total=len(items))
 
     def get(self, *, cv_id: str, current_user: CurrentUser) -> CVReadResult:
         record = self.db.get(CVRecord, cv_id)
@@ -137,10 +188,61 @@ class CVScanService:
             cv_id=record.id,
             status=record.scan_status,
             original_file_name=record.original_file_name,
+            latest_version_number=self._latest_version_number(cv_id=record.id),
             draft_profile=draft_profile,
             profile=profile,
             warnings=record.warnings or [],
         )
+
+    def list_versions(self, *, cv_id: str, current_user: CurrentUser) -> CVVersionListResult:
+        record = self.db.get(CVRecord, cv_id)
+        self._ensure_cv_access(record=record, cv_id=cv_id, current_user=current_user)
+        versions = list(
+            self.db.scalars(
+                select(CVVersion)
+                .where(CVVersion.cv_id == cv_id)
+                .order_by(CVVersion.version_number.desc())
+            ).all()
+        )
+        items = [
+            CVVersionRead(
+                version_id=version.id,
+                cv_id=version.cv_id,
+                version_number=version.version_number,
+                status=version.status,
+                source=version.source,
+                profile=CVProfile.model_validate(version.profile_json),
+                edit_note=version.edit_note,
+            )
+            for version in versions
+        ]
+        return CVVersionListResult(items=items, total=len(items))
+
+    def _create_version(
+        self,
+        *,
+        cv_id: str,
+        user_id: str | None,
+        profile: CVProfile,
+        status: str,
+        source: str,
+        edit_note: str | None,
+    ) -> CVVersion:
+        version_number = (self._latest_version_number(cv_id=cv_id) or 0) + 1
+        version = CVVersion(
+            cv_id=cv_id,
+            user_id=user_id,
+            version_number=version_number,
+            status=status,
+            source=source,
+            profile_json=profile.model_dump(mode="json"),
+            edit_note=edit_note,
+        )
+        self.db.add(version)
+        return version
+
+    def _latest_version_number(self, *, cv_id: str) -> int | None:
+        return self.db.scalar(select(func.max(CVVersion.version_number)).where(CVVersion.cv_id == cv_id))
 
     def _ensure_cv_access(
         self,

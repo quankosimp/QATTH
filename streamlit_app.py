@@ -218,6 +218,9 @@ def main() -> None:
         if st.session_state.cv_profile:
             st.subheader("Saved CV profile")
             render_profile(st.session_state.cv_profile)
+            if st.button("Show CV versions"):
+                versions = get_json(f"/v1/cvs/{st.session_state.cv_id}/versions")
+                st.json(versions)
 
     with tab_interview:
         st.header("Virtual interview")

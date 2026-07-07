@@ -72,14 +72,45 @@ class CVScanResult(BaseModel):
 class CVSaveResult(BaseModel):
     cv_id: str
     status: str
+    version_id: str
+    version_number: int
     profile: CVProfile
     warnings: list[str] = Field(default_factory=list)
+
+
+class CVSummary(BaseModel):
+    cv_id: str
+    status: str
+    original_file_name: str
+    latest_version_number: int | None = None
+    active_profile_name: str | None = None
+
+
+class CVListResult(BaseModel):
+    items: list[CVSummary]
+    total: int
+
+
+class CVVersionRead(BaseModel):
+    version_id: str
+    cv_id: str
+    version_number: int
+    status: str
+    source: str
+    profile: CVProfile
+    edit_note: str | None = None
+
+
+class CVVersionListResult(BaseModel):
+    items: list[CVVersionRead]
+    total: int
 
 
 class CVReadResult(BaseModel):
     cv_id: str
     status: str
     original_file_name: str
+    latest_version_number: int | None = None
     draft_profile: CVProfile | None = None
     profile: CVProfile | None = None
     warnings: list[str] = Field(default_factory=list)

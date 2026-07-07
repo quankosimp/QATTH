@@ -17,6 +17,9 @@ All REST endpoints return:
 
 ## CV
 
+- `GET /v1/cvs`
+- Returns CVs owned by the authenticated user, including latest version number.
+
 - `POST /v1/cvs/scan`
 - Multipart form fields:
 - `file`: PDF or DOCX
@@ -28,6 +31,10 @@ All REST endpoints return:
 - `PUT /v1/cvs/{cv_id}/profile`
 - Body: edited `CVProfile` JSON.
 - Saves the reviewed profile to the database and changes status to `completed`.
+- Creates a new `final` CV version.
+
+- `GET /v1/cvs/{cv_id}/versions`
+- Returns LLM draft and user-reviewed profile versions.
 
 - `GET /v1/cvs/{cv_id}`
 - Returns `draft_profile` when pending review and `profile` after completion.

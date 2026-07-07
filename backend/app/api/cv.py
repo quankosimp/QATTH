@@ -4,10 +4,27 @@ from sqlalchemy.orm import Session
 from app.core.db import get_db
 from app.core.security import CurrentUser, get_current_user
 from app.schemas.common import APIResponse, make_response
-from app.schemas.cv import CVProfile, CVReadResult, CVSaveResult, CVScanResult
+from app.schemas.cv import (
+    CVListResult,
+    CVProfile,
+    CVReadResult,
+    CVSaveResult,
+    CVScanResult,
+    CVVersionListResult,
+)
 from app.services.cv_scan import CVScanService
 
 router = APIRouter(prefix="/cvs", tags=["cvs"])
+
+
+@router.get("", response_model=APIResponse[CVListResult])
+def list_cvs(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+) -> APIResponse[CVListResult]:
+    result = CVScanService(db=db).list(current_user=current_user)
+    return make_response(result, request=request)
 
 
 @router.post("/scan", response_model=APIResponse[CVScanResult])
@@ -41,6 +58,17 @@ def save_cv_profile(
         profile=profile,
         current_user=current_user,
     )
+    return make_response(result, request=request)
+
+
+@router.get("/{cv_id}/versions", response_model=APIResponse[CVVersionListResult])
+def list_cv_versions(
+    request: Request,
+    cv_id: str,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+) -> APIResponse[CVVersionListResult]:
+    result = CVScanService(db=db).list_versions(cv_id=cv_id, current_user=current_user)
     return make_response(result, request=request)
 
 
