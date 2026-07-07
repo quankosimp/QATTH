@@ -131,6 +131,7 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 cp .env.example .env
+alembic upgrade head
 uvicorn app.main:app --reload --app-dir backend
 ```
 
@@ -151,6 +152,13 @@ For real Gemini-backed CV scan, interview evaluation, and Gemini Live interview,
 
 ```env
 GEMINI_API_KEY=your_key_here
+```
+
+Database migrations:
+
+```bash
+alembic upgrade head
+alembic revision --autogenerate -m "describe change"
 ```
 
 ## Typical backend flow

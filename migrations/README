@@ -1,0 +1,9 @@
+Alembic migration environment for QATTH.
+
+Run:
+
+    alembic upgrade head
+
+Create future migrations:
+
+    alembic revision --autogenerate -m "describe change"

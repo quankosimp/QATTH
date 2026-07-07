@@ -27,12 +27,14 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 def init_db() -> None:
-    try:
-        import app.models.db  # noqa: F401
-    except ModuleNotFoundError:
-        pass
+    settings = get_settings()
+    if settings.auto_create_tables:
+        try:
+            import app.models.db  # noqa: F401
+        except ModuleNotFoundError:
+            pass
 
-    Base.metadata.create_all(bind=engine)
+        Base.metadata.create_all(bind=engine)
 
 
 def get_db() -> Generator[Session, None, None]:

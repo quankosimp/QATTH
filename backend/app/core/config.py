@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/v1"
 
     database_url: str = "sqlite:///./data/qatth.db"
+    auto_create_tables: bool = False
 
     gemini_api_key: str | None = None
     gemini_cv_model: str = "gemini-3.5-flash"
