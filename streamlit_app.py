@@ -21,6 +21,8 @@ def init_state() -> None:
         "messages": [],
         "interview_result": None,
         "match_items": [],
+        "access_token": None,
+        "current_user": None,
     }
     for key, value in defaults.items():
         st.session_state.setdefault(key, value)
@@ -45,23 +47,28 @@ def unwrap_response(response: httpx.Response) -> Any:
     return body["data"]
 
 
+def auth_headers() -> dict[str, str]:
+    token = st.session_state.get("access_token")
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
 def post_json(path: str, payload: dict[str, Any]) -> Any:
     with httpx.Client(timeout=60.0) as client:
-        return unwrap_response(client.post(f"{api_base()}{path}", json=payload))
+        return unwrap_response(client.post(f"{api_base()}{path}", json=payload, headers=auth_headers()))
 
 
 def put_json(path: str, payload: dict[str, Any]) -> Any:
     with httpx.Client(timeout=60.0) as client:
-        return unwrap_response(client.put(f"{api_base()}{path}", json=payload))
+        return unwrap_response(client.put(f"{api_base()}{path}", json=payload, headers=auth_headers()))
 
 
 def get_json(path: str) -> Any:
     with httpx.Client(timeout=60.0) as client:
-        return unwrap_response(client.get(f"{api_base()}{path}"))
+        return unwrap_response(client.get(f"{api_base()}{path}", headers=auth_headers()))
 
 
 def send_interview_message(interview_id: str, text: str) -> list[dict[str, Any]]:
-    url = f"{ws_base(api_base())}/v1/interviews/{interview_id}/stream"
+    url = f"{ws_base(api_base())}/v1/interviews/{interview_id}/stream?token={st.session_state.access_token}"
     ws = create_connection(url, timeout=15)
     events: list[dict[str, Any]] = []
     try:
@@ -102,6 +109,40 @@ def main() -> None:
     base = api_base()
     st.sidebar.write("API docs:", f"{base}/docs")
 
+    st.sidebar.divider()
+    st.sidebar.subheader("Account")
+    if st.session_state.current_user:
+        st.sidebar.write(st.session_state.current_user["email"])
+        st.sidebar.caption(f"Role: {st.session_state.current_user['role']}")
+        if st.sidebar.button("Log out"):
+            st.session_state.access_token = None
+            st.session_state.current_user = None
+            st.rerun()
+    else:
+        auth_mode = st.sidebar.radio("Mode", ["Login", "Register"], horizontal=True)
+        email = st.sidebar.text_input("Email")
+        password = st.sidebar.text_input("Password", type="password")
+        full_name = None
+        if auth_mode == "Register":
+            full_name = st.sidebar.text_input("Full name")
+        if st.sidebar.button(auth_mode):
+            path = "/v1/auth/login" if auth_mode == "Login" else "/v1/auth/register"
+            payload = {"email": email, "password": password}
+            if full_name:
+                payload["full_name"] = full_name
+            try:
+                with httpx.Client(timeout=30.0) as client:
+                    result = unwrap_response(client.post(f"{base}{path}", json=payload))
+                st.session_state.access_token = result["access_token"]
+                st.session_state.current_user = result["user"]
+                st.rerun()
+            except Exception as exc:
+                st.sidebar.error(str(exc))
+
+    if not st.session_state.current_user:
+        st.info("Login or register to use the career platform.")
+        return
+
     tab_cv, tab_interview, tab_jobs = st.tabs(["1. CV Scan", "2. Interview", "3. Job Matches"])
 
     with tab_cv:
@@ -121,7 +162,14 @@ def main() -> None:
                 }
                 data = {"target_role": target_role, "language": language}
                 with httpx.Client(timeout=120.0) as client:
-                    result = unwrap_response(client.post(f"{base}/v1/cvs/scan", files=files, data=data))
+                    result = unwrap_response(
+                        client.post(
+                            f"{base}/v1/cvs/scan",
+                            files=files,
+                            data=data,
+                            headers=auth_headers(),
+                        )
+                    )
                 st.session_state.cv_id = result["cv_id"]
                 st.session_state.cv_status = result["status"]
                 st.session_state.cv_draft_profile = result["draft_profile"]

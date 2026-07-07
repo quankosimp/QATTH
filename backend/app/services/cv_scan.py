@@ -2,6 +2,7 @@ from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
+from app.core.security import CurrentUser
 from app.models.db import CVRecord
 from app.schemas.cv import CVProfile, CVReadResult, CVSaveResult, CVScanResult
 from app.services.gemini import GeminiService
@@ -33,6 +34,7 @@ class CVScanService:
         upload_file: UploadFile,
         target_role: str | None,
         language: str,
+        current_user: CurrentUser,
     ) -> CVScanResult:
         stored = await self.storage.save_upload(
             upload_file,
@@ -43,6 +45,7 @@ class CVScanService:
         )
 
         record = CVRecord(
+            user_id=current_user.id,
             original_file_name=stored.original_name,
             content_type=stored.content_type,
             file_path=str(stored.path),
@@ -91,15 +94,15 @@ class CVScanService:
             warnings=profile.warnings,
         )
 
-    def save_profile(self, *, cv_id: str, profile: CVProfile) -> CVSaveResult:
+    def save_profile(
+        self,
+        *,
+        cv_id: str,
+        profile: CVProfile,
+        current_user: CurrentUser,
+    ) -> CVSaveResult:
         record = self.db.get(CVRecord, cv_id)
-        if not record:
-            raise AppError(
-                status_code=404,
-                code="CV_NOT_FOUND",
-                message="CV was not found.",
-                details={"cv_id": cv_id},
-            )
+        self._ensure_cv_access(record=record, cv_id=cv_id, current_user=current_user)
 
         if record.scan_status == "failed":
             raise AppError(
@@ -122,15 +125,9 @@ class CVScanService:
             warnings=profile.warnings,
         )
 
-    def get(self, *, cv_id: str) -> CVReadResult:
+    def get(self, *, cv_id: str, current_user: CurrentUser) -> CVReadResult:
         record = self.db.get(CVRecord, cv_id)
-        if not record:
-            raise AppError(
-                status_code=404,
-                code="CV_NOT_FOUND",
-                message="CV was not found.",
-                details={"cv_id": cv_id},
-            )
+        self._ensure_cv_access(record=record, cv_id=cv_id, current_user=current_user)
 
         draft_profile = (
             CVProfile.model_validate(record.raw_model_response) if record.raw_model_response else None
@@ -144,3 +141,25 @@ class CVScanService:
             profile=profile,
             warnings=record.warnings or [],
         )
+
+    def _ensure_cv_access(
+        self,
+        *,
+        record: CVRecord | None,
+        cv_id: str,
+        current_user: CurrentUser,
+    ) -> None:
+        if not record:
+            raise AppError(
+                status_code=404,
+                code="CV_NOT_FOUND",
+                message="CV was not found.",
+                details={"cv_id": cv_id},
+            )
+        if not current_user.is_admin and record.user_id not in {None, current_user.id}:
+            raise AppError(
+                status_code=404,
+                code="CV_NOT_FOUND",
+                message="CV was not found.",
+                details={"cv_id": cv_id},
+            )

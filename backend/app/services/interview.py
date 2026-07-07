@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
+from app.core.security import CurrentUser
 from app.models.db import CVRecord, InterviewSession, InterviewTurn
 from app.schemas.cv import CVProfile
 from app.schemas.interview import (
@@ -19,8 +20,9 @@ from app.services.evaluation import EvaluationService
 
 
 class InterviewService:
-    def __init__(self, *, db: Session) -> None:
+    def __init__(self, *, db: Session, current_user: CurrentUser | None = None) -> None:
         self.db = db
+        self.current_user = current_user
 
     def create(self, *, cv_id: str, target_role: str, language: str) -> InterviewCreateResult:
         cv_record = self._get_cv(cv_id)
@@ -28,6 +30,7 @@ class InterviewService:
         opening_message = self._opening_message(profile=profile, target_role=target_role)
 
         session = InterviewSession(
+            user_id=self.current_user.id if self.current_user else cv_record.user_id,
             cv_id=cv_id,
             target_role=target_role,
             language=language,
@@ -325,11 +328,33 @@ class InterviewService:
                 message="CV must be scanned successfully before starting an interview.",
                 details={"status": cv_record.scan_status},
             )
+        if (
+            self.current_user
+            and not self.current_user.is_admin
+            and cv_record.user_id not in {None, self.current_user.id}
+        ):
+            raise AppError(
+                status_code=404,
+                code="CV_NOT_FOUND",
+                message="CV was not found.",
+                details={"cv_id": cv_id},
+            )
         return cv_record
 
     def _get_session(self, interview_id: str) -> InterviewSession:
         session = self.db.get(InterviewSession, interview_id)
         if not session:
+            raise AppError(
+                status_code=404,
+                code="INTERVIEW_NOT_FOUND",
+                message="Interview was not found.",
+                details={"interview_id": interview_id},
+            )
+        if (
+            self.current_user
+            and not self.current_user.is_admin
+            and session.user_id not in {None, self.current_user.id}
+        ):
             raise AppError(
                 status_code=404,
                 code="INTERVIEW_NOT_FOUND",
