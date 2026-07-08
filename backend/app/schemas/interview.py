@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 class InterviewCreateRequest(BaseModel):
     cv_id: str
     target_role: str = Field(default="Backend Developer Intern")
+    interview_type: str = Field(default="mock", description="mock or diagnostic")
     language: str = Field(default="vi")
 
 
@@ -15,6 +16,7 @@ class InterviewCreateResult(BaseModel):
     cv_id: str
     status: str
     target_role: str
+    interview_type: str
     opening_message: str
 
 
@@ -57,5 +59,6 @@ class InterviewResultRead(BaseModel):
     cv_id: str
     status: str
     target_role: str
+    interview_type: str
     result: InterviewResult | None = None
     transcript: list[TranscriptMessage] = Field(default_factory=list)

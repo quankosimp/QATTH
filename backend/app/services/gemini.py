@@ -45,6 +45,7 @@ class GeminiService:
         profile: dict[str, Any],
         transcript: list[dict[str, Any]],
         target_role: str,
+        interview_type: str,
         language: str,
         response_schema: type[BaseModel],
     ) -> dict[str, Any]:
@@ -60,6 +61,7 @@ class GeminiService:
             profile,
             transcript,
             target_role,
+            interview_type,
             language,
             response_schema,
         )
@@ -99,11 +101,37 @@ class GeminiService:
         )
         return self._coerce_json_response(response)
 
+    async def generate_discovery_profile(
+        self,
+        *,
+        profile: dict[str, Any],
+        interview_result: dict[str, Any] | None,
+        preferences: dict[str, Any],
+        language: str,
+        response_schema: type[BaseModel],
+    ) -> dict[str, Any]:
+        if not self.is_configured:
+            raise AppError(
+                status_code=503,
+                code="GEMINI_NOT_CONFIGURED",
+                message="GEMINI_API_KEY is required for Gemini discovery profile generation.",
+            )
+
+        return await asyncio.to_thread(
+            self._generate_discovery_profile_sync,
+            profile,
+            interview_result,
+            preferences,
+            language,
+            response_schema,
+        )
+
     def _evaluate_interview_sync(
         self,
         profile: dict[str, Any],
         transcript: list[dict[str, Any]],
         target_role: str,
+        interview_type: str,
         language: str,
         response_schema: type[BaseModel],
     ) -> dict[str, Any]:
@@ -121,9 +149,49 @@ class GeminiService:
             "You are a senior technical interviewer for entry-level IT hiring. "
             "Evaluate the candidate using the provided CV profile and interview transcript. "
             "Return JSON only in the requested schema. Be strict but fair. "
-            f"Target role: {target_role}. Response language: {language}.\n\n"
+            f"Target role: {target_role}. Interview type: {interview_type}. Response language: {language}.\n\n"
             f"CV_PROFILE_JSON:\n{json.dumps(profile, ensure_ascii=False)}\n\n"
             f"TRANSCRIPT_JSON:\n{json.dumps(transcript, ensure_ascii=False)}"
+        )
+        client = genai.Client(api_key=self.settings.gemini_api_key)
+        response = client.models.generate_content(
+            model=self.settings.gemini_evaluation_model,
+            contents=[prompt],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=response_schema,
+            ),
+        )
+        return self._coerce_json_response(response)
+
+    def _generate_discovery_profile_sync(
+        self,
+        profile: dict[str, Any],
+        interview_result: dict[str, Any] | None,
+        preferences: dict[str, Any],
+        language: str,
+        response_schema: type[BaseModel],
+    ) -> dict[str, Any]:
+        try:
+            from google import genai
+            from google.genai import types
+        except ImportError as exc:
+            raise AppError(
+                status_code=500,
+                code="GEMINI_SDK_MISSING",
+                message="google-genai is not installed.",
+            ) from exc
+
+        prompt = (
+            "You are a career coach for entry-level IT students. "
+            "The user may not have a target JD. Build a candidate discovery profile from the CV, "
+            "optional diagnostic interview result, and job preferences. Return JSON only in the requested schema. "
+            "Recommend realistic internship, fresher, or junior roles; include role-fit evidence, skill gaps, "
+            "search queries for live job search, and a short practice plan. "
+            f"Response language: {language}.\n\n"
+            f"CV_PROFILE_JSON:\n{json.dumps(profile, ensure_ascii=False)}\n\n"
+            f"INTERVIEW_RESULT_JSON:\n{json.dumps(interview_result or {}, ensure_ascii=False)}\n\n"
+            f"PREFERENCES_JSON:\n{json.dumps(preferences, ensure_ascii=False)}"
         )
         client = genai.Client(api_key=self.settings.gemini_api_key)
         response = client.models.generate_content(

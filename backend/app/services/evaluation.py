@@ -32,6 +32,7 @@ class EvaluationService:
                     "interview_id": session.id,
                     "cv_id": cv_record.id,
                     "target_role": session.target_role,
+                    "interview_type": session.interview_type,
                     "language": session.language,
                     "transcript_turns": len(transcript),
                 },
@@ -42,6 +43,7 @@ class EvaluationService:
                     profile=profile.model_dump(mode="json"),
                     transcript=[item.model_dump(mode="json") for item in transcript],
                     target_role=session.target_role,
+                    interview_type=session.interview_type,
                     language=session.language,
                     response_schema=InterviewResult,
                 )
@@ -57,6 +59,7 @@ class EvaluationService:
             profile=profile,
             transcript=transcript,
             target_role=session.target_role,
+            interview_type=session.interview_type,
             interview_id=session.id,
         )
 
@@ -80,10 +83,14 @@ class EvaluationService:
         profile: CVProfile,
         transcript: list[TranscriptMessage],
         target_role: str,
+        interview_type: str,
         interview_id: str,
     ) -> InterviewResult:
         user_turns = [turn for turn in transcript if turn.role == "user"]
         skill_names = [skill.name for skill in profile.skills]
+        recommended_roles = profile.target_roles or [target_role]
+        if interview_type == "diagnostic":
+            recommended_roles = self._infer_roles_from_skills(skill_names=skill_names, fallback=target_role)
         base_score = 5.5 + min(len(user_turns), 4) * 0.5
         has_project = bool(profile.projects)
         overall = min(8.0 if has_project else 7.0, base_score)
@@ -120,10 +127,26 @@ class EvaluationService:
                 "Needs live Gemini evaluation for production-grade scoring.",
                 "Add more project impact metrics and deployment details.",
             ],
-            recommended_roles=profile.target_roles or [target_role],
+            recommended_roles=recommended_roles,
             skill_gaps=["Testing fundamentals", "System design basics", "Cloud deployment basics"],
             transcript_summary=(
                 f"Demo evaluation generated from {len(user_turns)} candidate turns for {target_role}."
             ),
             full_transcript_ref=interview_id,
         )
+
+    def _infer_roles_from_skills(self, *, skill_names: list[str], fallback: str) -> list[str]:
+        lowered = {skill.lower() for skill in skill_names}
+        roles: list[str] = []
+        if {"python", "fastapi", "django", "sql", "postgresql"}.intersection(lowered):
+            roles.append("Junior Python Backend Developer")
+        if {"javascript", "typescript", "react", "vue", "html", "css"}.intersection(lowered):
+            roles.append("Frontend Developer Intern")
+        if {"sql", "python", "excel", "power bi", "tableau"}.intersection(lowered):
+            roles.append("Data Analyst Intern")
+        if {"testing", "selenium", "postman", "qa"}.intersection(lowered):
+            roles.append("QA Engineer Intern")
+        if not roles:
+            roles.append(fallback)
+        return roles[:3]
+

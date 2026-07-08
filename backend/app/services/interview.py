@@ -24,15 +24,31 @@ class InterviewService:
         self.db = db
         self.current_user = current_user
 
-    def create(self, *, cv_id: str, target_role: str, language: str) -> InterviewCreateResult:
+    def create(
+        self,
+        *,
+        cv_id: str,
+        target_role: str,
+        interview_type: str,
+        language: str,
+    ) -> InterviewCreateResult:
+        if interview_type not in {"mock", "diagnostic"}:
+            raise AppError(
+                status_code=422,
+                code="INVALID_INTERVIEW_TYPE",
+                message="interview_type must be mock or diagnostic.",
+            )
         cv_record = self._get_cv(cv_id)
         profile = CVProfile.model_validate(cv_record.parsed_profile or {})
-        opening_message = self._opening_message(profile=profile, target_role=target_role)
+        opening_message = self._opening_message(
+            profile=profile, target_role=target_role, interview_type=interview_type
+        )
 
         session = InterviewSession(
             user_id=self.current_user.id if self.current_user else cv_record.user_id,
             cv_id=cv_id,
             target_role=target_role,
+            interview_type=interview_type,
             language=language,
             status="created",
             opening_message=opening_message,
@@ -55,6 +71,7 @@ class InterviewService:
             cv_id=cv_id,
             status=session.status,
             target_role=target_role,
+            interview_type=interview_type,
             opening_message=opening_message,
         )
 
@@ -213,6 +230,7 @@ class InterviewService:
             cv_id=session.cv_id,
             status=session.status,
             target_role=session.target_role,
+            interview_type=session.interview_type,
             result=result,
             transcript=transcript,
         )
@@ -253,18 +271,34 @@ class InterviewService:
             .select_from(InterviewTurn)
             .where(InterviewTurn.interview_id == session.id, InterviewTurn.role == "user")
         )
-        question_bank = [
-            f"Bạn hãy chọn một project gần nhất và giải thích kiến trúc chính liên quan tới {session.target_role}.",
-            "Nếu API backend trả chậm trong production, bạn sẽ debug theo các bước nào?",
-            "Bạn đã từng thiết kế database cho feature nào chưa? Hãy nói về bảng chính và quan hệ dữ liệu.",
-            "Khi làm việc nhóm, bạn xử lý conflict code hoặc requirement thay đổi như thế nào?",
-            "Bạn muốn cải thiện kỹ năng kỹ thuật nào trong 3 tháng tới để phù hợp hơn với vị trí này?",
-        ]
+        if session.interview_type == "diagnostic":
+            question_bank = [
+                "Bạn muốn tìm loại công việc IT nào, và điều gì khiến bạn chưa chắc mình phù hợp?",
+                "Trong CV, project hoặc môn học nào phản ánh đúng năng lực hiện tại nhất của bạn?",
+                "Bạn tự tin nhất ở nhóm kỹ năng nào: backend, frontend, data, QA, DevOps, AI, hay kỹ năng khác?",
+                "Bạn muốn ưu tiên internship, fresher hay junior? Có ràng buộc về địa điểm, remote, hoặc mức lương không?",
+                "Trong 1-2 tháng tới, bạn sẵn sàng cải thiện kỹ năng nào để apply job phù hợp hơn?",
+            ]
+        else:
+            question_bank = [
+                f"Bạn hãy chọn một project gần nhất và giải thích kiến trúc chính liên quan tới {session.target_role}.",
+                "Nếu API backend trả chậm trong production, bạn sẽ debug theo các bước nào?",
+                "Bạn đã từng thiết kế database cho feature nào chưa? Hãy nói về bảng chính và quan hệ dữ liệu.",
+                "Khi làm việc nhóm, bạn xử lý conflict code hoặc requirement thay đổi như thế nào?",
+                "Bạn muốn cải thiện kỹ năng kỹ thuật nào trong 3 tháng tới để phù hợp hơn với vị trí này?",
+            ]
         index = min(max((user_turn_count or 1) - 1, 0), len(question_bank) - 1)
         return question_bank[index]
 
-    def _opening_message(self, *, profile: CVProfile, target_role: str) -> str:
+    def _opening_message(
+        self, *, profile: CVProfile, target_role: str, interview_type: str
+    ) -> str:
         name = profile.name or "bạn"
+        if interview_type == "diagnostic":
+            return (
+                f"Chào {name}, mình sẽ hỏi vài câu để hiểu năng lực, mục tiêu và ràng buộc tìm việc của bạn. "
+                "Sau buổi này hệ thống sẽ đề xuất nhóm JD phù hợp, skill gap và từ khóa nên tìm."
+            )
         return (
             f"Chào {name}, mình sẽ phỏng vấn bạn cho vị trí {target_role}. "
             "Trước tiên, hãy giới thiệu ngắn gọn về bản thân và một project IT bạn tự tin nhất."

@@ -7,6 +7,7 @@ from app.core.errors import AppError
 from app.core.security import CurrentUser
 from app.models.db import (
     AuthToken,
+    CandidateDiscoveryProfile,
     CVRecord,
     CVVersion,
     ConsentRecord,
@@ -131,6 +132,9 @@ class ProfileService:
         )
 
         deleted_matches = self._delete_count(delete(MatchRun).where(MatchRun.user_id == user_id))
+        deleted_discovery_profiles = self._delete_count(
+            delete(CandidateDiscoveryProfile).where(CandidateDiscoveryProfile.user_id == user_id)
+        )
         deleted_interactions = self._delete_count(
             delete(JobInteraction).where(JobInteraction.user_id == user_id)
         )
@@ -161,6 +165,7 @@ class ProfileService:
             deleted_interviews=deleted_interviews,
             deleted_matches=deleted_matches,
             deleted_interactions=deleted_interactions,
+            deleted_discovery_profiles=deleted_discovery_profiles,
             user_deactivated=True,
         )
 
@@ -192,6 +197,19 @@ class ProfileService:
         matches = [
             {"match_id": match.id, "cv_id": match.cv_id, "results": match.results}
             for match in self.db.scalars(select(MatchRun).where(MatchRun.user_id == user_id)).all()
+        ]
+        discovery_profiles = [
+            {
+                "profile_id": profile.id,
+                "cv_id": profile.cv_id,
+                "interview_id": profile.interview_id,
+                "source": profile.source,
+                "profile": profile.profile_json,
+                "created_at": profile.created_at.isoformat() if profile.created_at else None,
+            }
+            for profile in self.db.scalars(
+                select(CandidateDiscoveryProfile).where(CandidateDiscoveryProfile.user_id == user_id)
+            ).all()
         ]
         interactions = [
             {
@@ -227,6 +245,7 @@ class ProfileService:
             cvs=cvs,
             interviews=interviews,
             matches=matches,
+            discovery_profiles=discovery_profiles,
             job_interactions=interactions,
             consents=consents,
         )

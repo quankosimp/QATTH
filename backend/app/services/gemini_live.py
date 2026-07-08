@@ -189,6 +189,22 @@ class GeminiLiveProxy:
         if not model.startswith("models/"):
             model = f"models/{model}"
 
+        if result.interview_type == "diagnostic":
+            instruction = (
+                "You are a career-fit diagnostic interviewer for IT students. "
+                "The candidate may not know which JD or role fits them yet. "
+                "Ask one concise question at a time to understand skills, projects, confidence, "
+                "constraints, preferred work model, and realistic entry-level roles. "
+                "Do not optimize for a specific JD during this interview."
+            )
+        else:
+            instruction = (
+                "You are a friendly but rigorous technical interviewer for IT students. "
+                f"Interview for target role: {result.target_role}. "
+                "Ask one question at a time, adapt to the candidate CV and answers, "
+                "and keep responses concise."
+            )
+
         return {
             "setup": {
                 "model": model,
@@ -196,17 +212,6 @@ class GeminiLiveProxy:
                     "responseModalities": ["AUDIO"],
                     "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": "Aoede"}}},
                 },
-                "systemInstruction": {
-                    "parts": [
-                        {
-                            "text": (
-                                "You are a friendly but rigorous technical interviewer for IT students. "
-                                f"Interview for target role: {result.target_role}. "
-                                "Ask one question at a time, adapt to the candidate CV and answers, "
-                                "and keep responses concise."
-                            )
-                        }
-                    ]
-                },
+                "systemInstruction": {"parts": [{"text": instruction}]},
             }
         }

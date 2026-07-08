@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     gemini_evaluation_model: str = "gemini-3.5-flash"
     gemini_live_model: str = "gemini-live-2.5-flash-preview"
 
+    job_search_provider: str = "serpapi_google_jobs"
+    serpapi_api_key: str | None = None
+    job_search_default_location: str = "Vietnam"
+
     upload_dir: Path = Path("data/uploads")
     generated_dir: Path = Path("data/generated")
     cors_origins: list[str] = Field(

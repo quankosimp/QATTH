@@ -20,10 +20,11 @@ Main user journey:
 2. The student uploads a CV.
 3. The system uses an LLM to scan the CV into structured JSON.
 4. The student reviews and edits the scanned JSON before saving it.
-5. The student starts a virtual technical interview.
+5. The student starts either a mock interview for a target role or a diagnostic interview when they are not sure which JD fits.
 6. The system evaluates the interview using a role-based rubric.
-7. The system matches the student with suitable IT jobs and explains why each job fits or does not fit.
-8. The student can save jobs, mark applied jobs, and give feedback so future matching can improve.
+7. The system can create a candidate discovery profile from the reviewed CV and diagnostic interview.
+8. The system searches suitable live JD sources, ranks jobs, and explains fit/gaps.
+9. The student can save jobs, mark applied jobs, and give feedback so future matching can improve.
 
 ## Core capabilities
 
@@ -43,12 +44,14 @@ Main user journey:
 - Store transcript and evaluation results.
 - Return interview score, strengths, weaknesses, recommended roles, and skill gaps.
 
-### Job ingestion and matching
+### Job ingestion, discovery, and matching
 
 - Store IT job postings with JD text, source URL, company, level, skills, location, and working model.
 - Seed local demo jobs for testing.
 - Support crawler adapter structure for public job sources.
-- Rank jobs using CV profile, interview result, user preferences, skill overlap, and semantic similarity.
+- Create candidate discovery profiles from reviewed CVs and diagnostic interviews.
+- Search live JD sources through a configured Search API provider.
+- Rank jobs using CV profile, discovery profile, interview result, user preferences, skill overlap, and semantic similarity.
 - Return match score, fit reasons, gap reasons, and apply URL.
 
 ### User product loop
@@ -146,10 +149,18 @@ Services:
 - MinIO object storage: `http://localhost:9001`
 - Celery worker: `worker` service in Docker Compose
 
-For real Gemini-backed CV scan, interview evaluation, and Gemini Live interview, set this in `.env`:
+For real Gemini-backed CV scan, interview evaluation, discovery profile generation, and Gemini Live interview, set this in `.env`:
 
 ```env
 GEMINI_API_KEY=your_key_here
+```
+
+For live external JD recommendations via SerpApi Google Jobs, set:
+
+```env
+JOB_SEARCH_PROVIDER=serpapi_google_jobs
+SERPAPI_API_KEY=your_key_here
+JOB_SEARCH_DEFAULT_LOCATION=Vietnam
 ```
 
 Database migrations:
@@ -180,7 +191,7 @@ POST /v1/cvs/scan
 PUT /v1/cvs/{cv_id}/profile
 ```
 
-4. Create and run interview:
+4. Create and run interview. Use `interview_type=mock` for JD-first practice or `interview_type=diagnostic` when the student is unsure which JD fits:
 
 ```text
 POST /v1/interviews
@@ -188,19 +199,26 @@ WS   /v1/interviews/{interview_id}/stream
 POST /v1/interviews/{interview_id}/end
 ```
 
-5. Seed or ingest jobs:
+5. Candidate-first discovery flow:
+
+```text
+POST /v1/discovery-profiles
+POST /v1/recommendations/jobs
+```
+
+6. Seed or ingest jobs:
 
 ```text
 POST /v1/jobs/crawl-runs
 ```
 
-6. Generate job matches:
+7. Generate JD-first job matches:
 
 ```text
 POST /v1/matches
 ```
 
-7. Record product feedback:
+8. Record product feedback:
 
 ```text
 POST /v1/jobs/{job_id}/interactions
