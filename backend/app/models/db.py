@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, JSON, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Float, JSON, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -220,6 +220,7 @@ class InterviewSession(Base):
     user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     cv_id: Mapped[str] = mapped_column(ForeignKey("cv_records.id"), nullable=False, index=True)
     target_role: Mapped[str] = mapped_column(String(160), nullable=False)
+    interview_type: Mapped[str] = mapped_column(String(40), nullable=False, default="mock", index=True)
     language: Mapped[str] = mapped_column(String(20), nullable=False, default="vi")
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="created")
     opening_message: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -244,6 +245,27 @@ class InterviewTurn(Base):
     text: Mapped[str | None] = mapped_column(Text, nullable=True)
     payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class CandidateDiscoveryProfile(Base):
+    __tablename__ = "candidate_discovery_profiles"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    cv_id: Mapped[str] = mapped_column(ForeignKey("cv_records.id"), nullable=False, index=True)
+    interview_id: Mapped[str | None] = mapped_column(
+        ForeignKey("interview_sessions.id"), nullable=True, index=True
+    )
+    source: Mapped[str] = mapped_column(String(40), nullable=False, default="fallback")
+    profile_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    recommended_roles: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    skill_gaps: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    search_queries: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now
+    )
 
 
 class CrawlRun(Base):

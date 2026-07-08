@@ -28,6 +28,7 @@ def create_interview(
     result = InterviewService(db=db, current_user=current_user).create(
         cv_id=payload.cv_id,
         target_role=payload.target_role,
+        interview_type=payload.interview_type,
         language=payload.language,
     )
     return make_response(result, request=request)

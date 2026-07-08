@@ -46,6 +46,7 @@ class DeleteMyDataResult(BaseModel):
     deleted_interviews: int
     deleted_matches: int
     deleted_interactions: int
+    deleted_discovery_profiles: int
     user_deactivated: bool
 
 
@@ -54,5 +55,6 @@ class ExportMyDataResult(BaseModel):
     cvs: list[dict] = Field(default_factory=list)
     interviews: list[dict] = Field(default_factory=list)
     matches: list[dict] = Field(default_factory=list)
+    discovery_profiles: list[dict] = Field(default_factory=list)
     job_interactions: list[dict] = Field(default_factory=list)
     consents: list[dict] = Field(default_factory=list)

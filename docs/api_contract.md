@@ -49,6 +49,7 @@ All REST endpoints return:
 {
   "cv_id": "uuid",
   "target_role": "Backend Developer Intern",
+  "interview_type": "mock",
   "language": "vi"
 }
 ```
@@ -74,6 +75,8 @@ All REST endpoints return:
 
 - `POST /v1/interviews/{interview_id}/end`
 - Ends the interview and returns structured evaluation.
+- `interview_type=mock` is the default for target-role practice.
+- `interview_type=diagnostic` is for candidate-first discovery when the user does not have a JD yet.
 
 - `GET /v1/interviews/{interview_id}/result`
 - Returns status, transcript, and evaluation if available.
@@ -121,6 +124,44 @@ All REST endpoints return:
 - `GET /v1/matches/{match_id}`
 - Reloads a previous match run.
 
+## Candidate discovery and recommendations
+
+- `POST /v1/discovery-profiles`
+- Body:
+
+```json
+{
+  "cv_id": "uuid",
+  "interview_id": "uuid-or-null",
+  "language": "vi"
+}
+```
+
+- Creates a candidate discovery profile from a reviewed CV and optional completed diagnostic interview.
+- Returns recommended roles, skill gaps, search queries, evidence, confidence, and practice plan.
+
+- `GET /v1/discovery-profiles`
+- Lists discovery profiles owned by the authenticated user.
+
+- `GET /v1/discovery-profiles/{profile_id}`
+- Returns one discovery profile.
+
+- `POST /v1/recommendations/jobs`
+- Body:
+
+```json
+{
+  "discovery_profile_id": "uuid",
+  "limit": 10,
+  "location": null,
+  "working_model": null,
+  "allow_stored_fallback": true
+}
+```
+
+- Searches live JD sources when configured, stores normalized jobs, ranks jobs using the discovery profile, and returns a `match_id` plus ranked job items.
+- If `SERPAPI_API_KEY` is not configured and `allow_stored_fallback=true`, it ranks stored jobs instead.
+
 ## Preferences, feedback, privacy
 
 - `GET /v1/preferences/jobs`
@@ -142,10 +183,10 @@ All REST endpoints return:
 - Lists consent history.
 
 - `DELETE /v1/privacy/me/data`
-- Deletes user-owned CVs, interviews, matches, interactions, consents, tokens, and deactivates the account.
+- Deletes user-owned CVs, interviews, discovery profiles, matches, interactions, consents, tokens, and deactivates the account.
 
 - `GET /v1/privacy/me/export`
-- Exports user-owned CVs, interviews, matches, job interactions, and consents.
+- Exports user-owned CVs, interviews, discovery profiles, matches, job interactions, and consents.
 
 ## Auth security
 
