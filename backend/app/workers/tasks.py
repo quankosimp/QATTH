@@ -199,6 +199,11 @@ def evaluate_product_interview_task(report_id: str) -> dict:
         report.actions = output.actions
         report.disclaimer = "AI-generated coaching feedback. It is not a hiring decision or guarantee of job fit."
         report.provider_run_id = provider.get("provider_run_id")
+        report.model = provider.get("model") or report.model
+        report.model_configuration_id = provider.get("model_configuration_id") or report.model_configuration_id
+        report.prompt_version = provider.get("prompt_version") or report.prompt_version
+        report.usage_json = provider.get("usage", {})
+        report.estimated_cost_minor = provider.get("estimated_cost_minor")
         report.status = "ready"
         report.completed_at = datetime.now(UTC)
         interview.status = "completed"
@@ -217,6 +222,17 @@ def evaluate_product_interview_task(report_id: str) -> dict:
                 interview.failure = report.error
             db.commit()
         raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="product.interview.expire_timed_out")
+def expire_timed_out_product_interviews_task() -> dict:
+    from app.services.product_interview import ProductInterviewService
+
+    db = SessionLocal()
+    try:
+        return {"status": "completed", **ProductInterviewService(db).expire_timed_out()}
     finally:
         db.close()
 

@@ -28,6 +28,7 @@ class InterviewView(BaseModel):
     duration_minutes: int
     started_at: datetime | None
     ended_at: datetime | None
+    ended_reason: str | None
     reconnect_until: datetime | None
     created_at: datetime
 
@@ -69,14 +70,24 @@ class EvidenceFinding(BaseModel):
 class InterviewReportView(BaseModel):
     id: str
     interview_id: str
+    parent_report_id: str | None
+    attempt_number: int
     status: str
     rubric_version: str
+    prompt_version: str
+    model: str
+    model_configuration_id: str | None
     scores: dict[str, float]
     strengths: list[EvidenceFinding]
     gaps: list[EvidenceFinding]
     actions: list[str]
     disclaimer: str
+    provider_run_id: str | None
+    usage: dict[str, Any] | None
+    estimated_cost_minor: int | None
+    error: dict[str, Any] | None
     created_at: datetime
+    completed_at: datetime | None
 
 
 class InterviewFeedbackRequest(BaseModel):

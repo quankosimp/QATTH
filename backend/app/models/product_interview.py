@@ -38,6 +38,7 @@ class ProductInterview(Base):
     gemini_resumption_handle = Column(Text, nullable=True)
     credit_reservation_id = Column(String(36), nullable=True)
     failure = Column(JSON, nullable=True)
+    ended_reason = Column(String(40), nullable=True)
     started_at = Column(DateTime(timezone=True), nullable=True)
     ended_at = Column(DateTime(timezone=True), nullable=True)
     reconnect_until = Column(DateTime(timezone=True), nullable=True)
@@ -89,17 +90,20 @@ class ProductInterviewEvent(Base):
 class ProductInterviewReport(Base):
     __tablename__ = "product_interview_reports"
     __table_args__ = (
-        UniqueConstraint("interview_id", "rubric_version", name="uq_product_interview_report_rubric"),
+        UniqueConstraint("interview_id", "rubric_version", "attempt_number", name="uq_product_interview_report_attempt"),
         Index("ix_product_interview_reports_status_created", "status", "created_at"),
     )
 
     id = Column(String(36), primary_key=True, default=_uuid)
     interview_id = Column(String(36), ForeignKey("product_interviews.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    parent_report_id = Column(String(36), ForeignKey("product_interview_reports.id", ondelete="SET NULL"), nullable=True)
+    attempt_number = Column(Integer, nullable=False, default=1)
     status = Column(String(24), nullable=False, default="processing")
     rubric_version = Column(String(40), nullable=False)
     prompt_version = Column(String(40), nullable=False)
     model = Column(String(160), nullable=False)
+    model_configuration_id = Column(String(36), nullable=True)
     transcript_version = Column(Integer, nullable=False)
     scores = Column(JSON, nullable=True)
     strengths = Column(JSON, nullable=True)
@@ -107,6 +111,8 @@ class ProductInterviewReport(Base):
     actions = Column(JSON, nullable=True)
     disclaimer = Column(Text, nullable=True)
     provider_run_id = Column(String(255), nullable=True)
+    usage_json = Column(JSON, nullable=True)
+    estimated_cost_minor = Column(Integer, nullable=True)
     error = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     completed_at = Column(DateTime(timezone=True), nullable=True)

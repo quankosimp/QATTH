@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     app_version: str = "1.0.0-draft"
     log_level: str = "INFO"
     api_v1_prefix: str = "/v1"
+    legacy_api_enabled: bool = False
+    legacy_api_prefix: str = "/legacy/v1"
     public_api_origin: str = "http://localhost:8000"
     request_timeout_seconds: int = 30
 
@@ -95,6 +97,8 @@ class Settings(BaseSettings):
             raise ValueError("RATE_LIMIT_REQUESTS_PER_MINUTE must be positive.")
         if self.signed_url_ttl_seconds < 30:
             raise ValueError("SIGNED_URL_TTL_SECONDS must be at least 30 seconds.")
+        if self.legacy_api_prefix == self.api_v1_prefix:
+            raise ValueError("LEGACY_API_PREFIX must not overlap API_V1_PREFIX.")
         if not self.product_processing_policy_version.strip():
             raise ValueError("PRODUCT_PROCESSING_POLICY_VERSION must not be empty.")
 

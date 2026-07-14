@@ -41,10 +41,10 @@ def create_interview(
     request: Request,
     current: ProductCurrentUser = Depends(get_product_user),
     db: Session = Depends(get_db),
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=255),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
 ):
     service = ProductInterviewService(db)
-    return make_response(service.view(service.create(current, payload)), request=request)
+    return make_response(service.view(service.create(current, payload, idempotency_key)), request=request)
 
 
 @router.get("/{interview_id}", response_model=APIResponse[InterviewView])
@@ -103,10 +103,10 @@ def end_interview(
     request: Request,
     current: ProductCurrentUser = Depends(get_product_user),
     db: Session = Depends(get_db),
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=255),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
 ):
     service = ProductInterviewService(db)
-    return make_response(service.view(service.end(current, interview_id)), request=request)
+    return make_response(service.view(service.end(current, interview_id, idempotency_key)), request=request)
 
 
 @router.post("/{interview_id}/cancel", response_model=APIResponse[InterviewView])
@@ -115,10 +115,10 @@ def cancel_interview(
     request: Request,
     current: ProductCurrentUser = Depends(get_product_user),
     db: Session = Depends(get_db),
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=255),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
 ):
     service = ProductInterviewService(db)
-    return make_response(service.view(service.cancel(current, interview_id)), request=request)
+    return make_response(service.view(service.cancel(current, interview_id, idempotency_key)), request=request)
 
 
 @router.get("/{interview_id}/report", response_model=APIResponse[InterviewReportView])
@@ -136,6 +136,18 @@ def get_interview_report(
     if report.status == "processing":
         response.status_code = status.HTTP_202_ACCEPTED
     return make_response(service.report_view(report), request=request)
+
+
+@router.post("/{interview_id}/report/retry", response_model=APIResponse[InterviewReportView], status_code=status.HTTP_202_ACCEPTED)
+def retry_interview_report(
+    interview_id: str,
+    request: Request,
+    current: ProductCurrentUser = Depends(get_product_user),
+    db: Session = Depends(get_db),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
+):
+    service = ProductInterviewService(db)
+    return make_response(service.report_view(service.retry_evaluation(current, interview_id, idempotency_key)), request=request)
 
 
 @router.post("/{interview_id}/feedback", response_model=APIResponse[InterviewFeedbackView], status_code=status.HTTP_201_CREATED)

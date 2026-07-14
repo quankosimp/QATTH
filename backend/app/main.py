@@ -4,7 +4,6 @@ from fastapi import FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.router import api_router as legacy_api_router
 from app.api.v1.health import router as health_router
 from app.api.v1.router import router as product_v1_router
 from app.core.config import get_settings
@@ -63,7 +62,10 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router)
     app.include_router(product_v1_router, prefix=settings.api_v1_prefix)
-    app.include_router(legacy_api_router, prefix=settings.api_v1_prefix)
+    if settings.legacy_api_enabled:
+        from app.api.router import api_router as legacy_api_router
+
+        app.include_router(legacy_api_router, prefix=settings.legacy_api_prefix)
 
     if settings.prometheus_enabled:
         from prometheus_fastapi_instrumentator import Instrumentator

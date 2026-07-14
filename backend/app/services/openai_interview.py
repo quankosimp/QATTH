@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 from typing import Any
 
@@ -97,7 +98,28 @@ class OpenAIInterviewEvaluator:
             output = InterviewEvaluationOutput.model_validate_json(text)
         except ValueError as exc:
             raise AppError(502, "AI_RESPONSE_INVALID", "Interview evaluator returned invalid output", retryable=True) from exc
-        return output, {"provider_run_id": raw.get("id"), "usage": raw.get("usage", {})}
+        usage = raw.get("usage", {})
+        return output, {
+            "provider_run_id": raw.get("id"),
+            "usage": usage,
+            "model": self.model,
+            "model_configuration_id": self.runtime.get("id"),
+            "prompt_version": str(
+                self.runtime["configuration"].get("prompt_version")
+                or self.runtime.get("version")
+                or "interview-evaluation-v1"
+            ),
+            "estimated_cost_minor": self._estimate_cost(usage),
+        }
+
+    def _estimate_cost(self, usage: dict[str, Any]) -> int | None:
+        input_rate = self.runtime["configuration"].get("input_cost_minor_per_million")
+        output_rate = self.runtime["configuration"].get("output_cost_minor_per_million")
+        if input_rate is None or output_rate is None:
+            return None
+        input_tokens = int(usage.get("input_tokens") or 0)
+        output_tokens = int(usage.get("output_tokens") or 0)
+        return math.ceil((input_tokens * int(input_rate) + output_tokens * int(output_rate)) / 1_000_000)
 
     @classmethod
     def _make_strict(cls, node: Any) -> None:
