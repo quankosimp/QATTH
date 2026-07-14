@@ -26,6 +26,7 @@ Không lưu PDF trong PostgreSQL trừ artifact rất nhỏ có lý do được 
 | <code>0007</code>-<code>0014</code> | Identity/profile/consent, Product CV, interview, job search, recommendation, billing, privacy và admin/ops |
 | <code>0015</code>-<code>0019</code> | Identity/file/CV hardening, interview hardening, job search hardening, billing dual-control và provider usage observability |
 | <code>0020</code>-<code>0023</code> | Payment inbox/reconciliation, billable interview boundary, recommendation feedback và auditable ranking v2 |
+| <code>0024</code>-<code>0026</code> | OIDC provider-session identity, catalog schedule invariants và cumulative payment reversal/account review |
 
 Migration trong <code>migrations/versions/</code> là lịch sử physical schema bất biến. Bảng/constraint trong tài liệu chưa có revision tương ứng phải được coi là gap và cần migration riêng; không dùng <code>create_all</code> để thay thế migration ở production.
 
@@ -457,7 +458,7 @@ Unique reservation/bucket. Allocation theo trial earliest expiry, subscription e
 
 ### account_reviews
 
-<code>id</code>, account/user, reason refund/chargeback/reconciliation, related payment/event, debt credit amount, status open/resolved/waived, actor/reason/timestamps.
+<code>id</code>, account/user, provider/event unique reference, reason refund/chargeback/reconciliation, debt credit amount, status open/resolved/waived, details và timestamps. Payment reversal state riêng theo provider/period lưu original amount, cumulative reversed amount và reversed credits; cumulative rounding bảo đảm nhiều partial events không reverse vượt grant.
 
 Refund reverse phần grant chưa dùng. Nếu grant đã dùng, account chuyển review/locked theo policy thay vì âm thầm tạo balance âm.
 

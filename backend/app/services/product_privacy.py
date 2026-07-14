@@ -279,6 +279,7 @@ class ProductPrivacyService:
         self._add_linked_export(snapshot, "product_job_application_events", "application_id", "product_job_applications")
         self._add_linked_export(snapshot, "product_recommendation_matches", "run_id", "product_recommendation_runs")
         self._add_linked_export(snapshot, "product_credit_buckets", "account_id", "product_credit_accounts")
+        self._add_linked_export(snapshot, "product_payment_reversal_states", "bucket_id", "product_credit_buckets")
         self._add_linked_export(snapshot, "product_credit_ledger_entries", "account_id", "product_credit_accounts")
         self._add_linked_export(snapshot, "product_credit_reservation_allocations", "reservation_id", "product_credit_reservations")
         output = io.BytesIO()
@@ -305,6 +306,7 @@ class ProductPrivacyService:
         retained = {
             "users", "audit_logs", "account_status_events", "user_consents", "consent_records",
             "product_credit_accounts", "product_credit_buckets", "product_credit_ledger_entries",
+            "product_payment_reversal_states", "product_credit_account_reviews",
             "product_credit_reservations", "product_credit_reservation_allocations", "product_signup_trial_grants",
             "product_billing_subscriptions", "product_billing_checkout_sessions", "product_billing_commands",
             "product_payment_event_inbox", "product_privacy_requests", "product_privacy_artifacts",

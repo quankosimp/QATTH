@@ -21,6 +21,7 @@ from app.models.product_billing import (
     BillingOffer,
     BillingSubscription,
     CreditAccount,
+    CreditAccountReview,
     CreditAdjustmentApproval,
     CreditBucket,
     CreditLedgerEntry,
@@ -28,6 +29,7 @@ from app.models.product_billing import (
     CreditReservationAllocation,
     FeatureCreditPrice,
     PaymentEventInbox,
+    PaymentReversalState,
     SignupTrialGrant,
     SignupTrialPolicy,
 )
@@ -739,13 +741,33 @@ class ProductBillingService:
             subscription.current_period_reference = period_reference
             subscription.current_period_start = period_start
             subscription.current_period_end = period_end
-        self._grant_bucket(account, bucket_type, "payment:" + period_reference, offer.credit_grant, expires_at, offer.display_name + " credits", "payment", event_id, "payment:" + event_id)
+        bucket = self._grant_bucket(account, bucket_type, "payment:" + period_reference, offer.credit_grant, expires_at, offer.display_name + " credits", "payment", event_id, "payment:" + event_id)
+        reversal_state = self.db.scalar(
+            select(PaymentReversalState).where(
+                PaymentReversalState.provider == provider,
+                PaymentReversalState.period_reference == period_reference,
+            )
+        )
+        if reversal_state is None:
+            self.db.add(
+                PaymentReversalState(
+                    provider=provider,
+                    period_reference=period_reference,
+                    bucket_id=bucket.id,
+                    original_amount_minor=amount_minor,
+                )
+            )
+        elif reversal_state.bucket_id != bucket.id or reversal_state.original_amount_minor != amount_minor:
+            raise AppError(409, "PAYMENT_REVERSAL_STATE_CONFLICT", "Payment reversal state does not match the granted payment")
         if checkout is not None:
             checkout.status = "completed"
             checkout.completed_at = _utcnow()
 
     def _payment_reversed(self, provider: str, payload: dict[str, Any], event_id: str, event_type: str) -> None:
-        source_reference = "payment:" + str(payload.get("period_reference") or payload.get("original_event_id") or "")
+        period_reference = str(payload.get("period_reference") or payload.get("original_event_id") or "")
+        if not period_reference:
+            raise AppError(422, "PAYMENT_PERIOD_REQUIRED", "Payment reversal requires the original payment reference")
+        source_reference = "payment:" + period_reference
         bucket = self.db.scalar(select(CreditBucket).where(CreditBucket.source_reference == source_reference).with_for_update())
         if bucket is None:
             raise AppError(422, "PAYMENT_GRANT_NOT_FOUND", "Reversed payment grant was not found")
@@ -754,14 +776,40 @@ class ProductBillingService:
                 PaymentEventInbox.provider == provider,
                 PaymentEventInbox.event_type.in_({"checkout.completed", "subscription.renewed"}),
                 PaymentEventInbox.normalized_payload["period_reference"].as_string()
-                == str(payload.get("period_reference") or ""),
+                == period_reference,
             )
         )
         original_amount = int((original_event.normalized_payload if original_event else {}).get("amount_minor") or 0)
         reversed_amount = int(payload.get("amount_minor") or original_amount)
-        if original_amount <= 0 or reversed_amount <= 0 or reversed_amount > original_amount:
-            raise AppError(422, "PAYMENT_REVERSAL_AMOUNT_INVALID", "Payment reversal amount is invalid")
-        credits_to_reverse = min(bucket.granted, (bucket.granted * reversed_amount + original_amount - 1) // original_amount)
+        state = self.db.scalar(
+            select(PaymentReversalState)
+            .where(
+                PaymentReversalState.provider == provider,
+                PaymentReversalState.period_reference == period_reference,
+            )
+            .with_for_update()
+        )
+        if state is None:
+            state = PaymentReversalState(
+                provider=provider,
+                period_reference=period_reference,
+                bucket_id=bucket.id,
+                original_amount_minor=original_amount,
+            )
+            self.db.add(state)
+            self.db.flush()
+        if state.bucket_id != bucket.id or state.original_amount_minor != original_amount:
+            raise AppError(409, "PAYMENT_REVERSAL_STATE_CONFLICT", "Payment reversal state does not match the original grant")
+        cumulative_amount, cumulative_credits, credits_to_reverse = self._cumulative_reversal(
+            original_amount=state.original_amount_minor,
+            granted_credits=bucket.granted,
+            reversed_amount=state.reversed_amount_minor,
+            reversed_credits=state.reversed_credits,
+            event_amount=reversed_amount,
+        )
+        state.reversed_amount_minor = cumulative_amount
+        state.reversed_credits = cumulative_credits
+        state.updated_at = _utcnow()
         account = self.db.scalar(select(CreditAccount).where(CreditAccount.id == bucket.account_id).with_for_update())
         reservation_ids = set(self.db.scalars(select(CreditReservation.id).join(CreditReservationAllocation, CreditReservationAllocation.reservation_id == CreditReservation.id).where(CreditReservationAllocation.bucket_id == bucket.id, CreditReservation.status == "reserved")))
         for reservation_id in reservation_ids:
@@ -773,9 +821,45 @@ class ProductBillingService:
         if amount_due:
             account.status = "review"
             account.debt += amount_due
+            self.db.add(
+                CreditAccountReview(
+                    account_id=account.id,
+                    user_id=account.user_id,
+                    provider=provider,
+                    provider_event_id=event_id,
+                    reason=event_type,
+                    debt_credits=amount_due,
+                    details={
+                        "period_reference": period_reference,
+                        "reversed_amount_minor": reversed_amount,
+                        "cumulative_reversed_amount_minor": cumulative_amount,
+                        "cumulative_reversed_credits": cumulative_credits,
+                    },
+                )
+            )
         self.db.flush()
         if unspent:
             self._ledger(account, -unspent, "REVERSAL", "Payment " + event_type, "payment_event", event_id, "reversal:" + event_id, bucket_id=bucket.id, metadata={"debt_created": amount_due})
+
+    @staticmethod
+    def _cumulative_reversal(
+        *,
+        original_amount: int,
+        granted_credits: int,
+        reversed_amount: int,
+        reversed_credits: int,
+        event_amount: int,
+    ) -> tuple[int, int, int]:
+        cumulative_amount = reversed_amount + event_amount
+        if original_amount <= 0 or granted_credits <= 0 or event_amount <= 0 or cumulative_amount > original_amount:
+            raise AppError(422, "PAYMENT_REVERSAL_AMOUNT_INVALID", "Payment reversal amount is invalid")
+        cumulative_credits = min(
+            granted_credits,
+            (granted_credits * cumulative_amount + original_amount - 1) // original_amount,
+        )
+        if cumulative_credits < reversed_credits:
+            raise AppError(409, "PAYMENT_REVERSAL_STATE_CORRUPT", "Payment reversal state is inconsistent")
+        return cumulative_amount, cumulative_credits, cumulative_credits - reversed_credits
 
     def list_catalog_versions(self) -> list[BillingCatalogVersionView]:
         return [self.catalog_version_view(item) for item in self.db.scalars(select(BillingCatalogVersion).order_by(BillingCatalogVersion.created_at.desc()))]

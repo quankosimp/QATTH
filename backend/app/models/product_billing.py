@@ -146,6 +146,44 @@ class CreditBucket(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
 
+class PaymentReversalState(Base):
+    __tablename__ = "product_payment_reversal_states"
+    __table_args__ = (
+        UniqueConstraint("provider", "period_reference", name="uq_product_payment_reversal_period"),
+        UniqueConstraint("bucket_id", name="uq_product_payment_reversal_bucket"),
+    )
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    provider = Column(String(40), nullable=False)
+    period_reference = Column(String(255), nullable=False)
+    bucket_id = Column(String(36), ForeignKey("product_credit_buckets.id", ondelete="RESTRICT"), nullable=False)
+    original_amount_minor = Column(Integer, nullable=False)
+    reversed_amount_minor = Column(Integer, nullable=False, default=0)
+    reversed_credits = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    updated_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
+
+
+class CreditAccountReview(Base):
+    __tablename__ = "product_credit_account_reviews"
+    __table_args__ = (
+        UniqueConstraint("provider", "provider_event_id", name="uq_product_credit_account_review_event"),
+        Index("ix_product_credit_account_reviews_account_status", "account_id", "status", "created_at"),
+    )
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    account_id = Column(String(36), ForeignKey("product_credit_accounts.id", ondelete="RESTRICT"), nullable=False)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    provider = Column(String(40), nullable=False)
+    provider_event_id = Column(String(255), nullable=False)
+    reason = Column(String(80), nullable=False)
+    debt_credits = Column(Integer, nullable=False)
+    status = Column(String(24), nullable=False, default="open")
+    details = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+
+
 class CreditLedgerEntry(Base):
     __tablename__ = "product_credit_ledger_entries"
     __table_args__ = (
