@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_admin_ops_contract_exposes_required_routes() -> None:
     source = (ROOT / "backend/app/api/v1/admin_ops.py").read_text()
-    for path in ("/admin/model-configurations", "/admin/job-sources", "/admin/users/{user_id}/status", "/ops/background-jobs", "/ops/background-jobs/{job_id}/retry", "/ops/provider-usage"):
+    for path in ("/admin/model-configurations", "/admin/job-sources", "/admin/users/{user_id}/status", "/admin/resources/{resource_type}/{resource_id}", "/ops/background-jobs", "/ops/background-jobs/{job_id}/retry", "/ops/provider-usage"):
         assert path in source
     assert "require_product_scopes" in source
 
@@ -34,3 +34,11 @@ def test_account_status_is_enforced_and_revokes_sessions() -> None:
     assert "update(UserSession)" in service
     assert "update(AuthToken)" in service
     assert "user.account_status.update" in service
+
+
+def test_admin_resource_and_source_views_are_filtered_and_audited() -> None:
+    service = (ROOT / "backend/app/services/product_admin_ops.py").read_text()
+    assert "UNSUPPORTED_RESOURCE_TYPE" in service
+    assert '"resource.read"' in service
+    assert "period_start" in service
+    assert "source_id" in service

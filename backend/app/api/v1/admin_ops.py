@@ -10,6 +10,7 @@ from app.schemas.common import APIResponse, make_response
 from app.schemas.product_admin_ops import (
     ActivateModelConfigurationRequest,
     AccountStatusView,
+    AdminResourceSummary,
     AdminUserSummary,
     BackgroundJobPage,
     BackgroundJobView,
@@ -34,6 +35,7 @@ jobs_read = require_product_scopes("admin:jobs:read")
 jobs_write = require_product_scopes("admin:jobs:write")
 users_read = require_product_scopes("admin:users:read")
 users_write = require_product_scopes("admin:users:write")
+resources_read = require_product_scopes("admin:resources:read")
 ops_read = require_product_scopes("ops:jobs:read")
 ops_write = require_product_scopes("ops:jobs:write")
 
@@ -60,8 +62,8 @@ def activate_model_configuration(configuration_id: str, payload: ActivateModelCo
 
 
 @router.get("/admin/job-sources", response_model=APIResponse[list[JobSourceAdminView]])
-def list_admin_job_sources(request: Request, current: ProductCurrentUser = Depends(jobs_read), db: Session = Depends(get_db)):
-    return make_response(ProductAdminOpsService(db).job_sources(current, _context(request)), request=request)
+def list_admin_job_sources(request: Request, source_status: str | None = Query(default=None, alias="status"), key: str | None = None, period_start: datetime | None = None, period_end: datetime | None = None, current: ProductCurrentUser = Depends(jobs_read), db: Session = Depends(get_db)):
+    return make_response(ProductAdminOpsService(db).job_sources(current, _context(request), source_status, key, period_start, period_end), request=request)
 
 
 @router.patch("/admin/job-sources/{source_id}", response_model=APIResponse[JobSourceAdminView])
@@ -74,6 +76,11 @@ def update_admin_job_source(source_id: str, payload: UpdateJobSourceRequest, req
 @router.get("/admin/users", response_model=APIResponse[list[AdminUserSummary]])
 def search_admin_users(request: Request, q: str = Query(..., min_length=3, max_length=320), current: ProductCurrentUser = Depends(users_read), db: Session = Depends(get_db)):
     return make_response(ProductAdminOpsService(db).search_users(current, q, _context(request)), request=request)
+
+
+@router.get("/admin/resources/{resource_type}/{resource_id}", response_model=APIResponse[AdminResourceSummary])
+def get_admin_resource(resource_type: str, resource_id: str, request: Request, current: ProductCurrentUser = Depends(resources_read), db: Session = Depends(get_db)):
+    return make_response(ProductAdminOpsService(db).resource(current, resource_type, resource_id, _context(request)), request=request)
 
 
 @router.patch("/admin/users/{user_id}/status", response_model=APIResponse[AccountStatusView])
@@ -98,8 +105,8 @@ def update_admin_user_status(
 
 
 @router.get("/admin/moderation-cases", response_model=APIResponse[list[ModerationCaseView]])
-def list_moderation_cases(request: Request, case_status: str | None = Query(default="open", alias="status"), current: ProductCurrentUser = Depends(jobs_read), db: Session = Depends(get_db)):
-    return make_response(ProductAdminOpsService(db).moderation_cases(current, case_status, _context(request)), request=request)
+def list_moderation_cases(request: Request, case_status: str | None = Query(default="open", alias="status"), source_id: str | None = None, period_start: datetime | None = None, period_end: datetime | None = None, current: ProductCurrentUser = Depends(jobs_read), db: Session = Depends(get_db)):
+    return make_response(ProductAdminOpsService(db).moderation_cases(current, case_status, source_id, period_start, period_end, _context(request)), request=request)
 
 
 @router.post("/admin/moderation-cases/{case_id}/resolve", response_model=APIResponse[ModerationCaseView])

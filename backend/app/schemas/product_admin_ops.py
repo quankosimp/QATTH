@@ -60,6 +60,15 @@ class AdminUserSummary(BaseModel):
     created_at: datetime
 
 
+class AdminResourceSummary(BaseModel):
+    resource_type: str
+    id: str
+    owner_user_id: str | None
+    status: str | None
+    created_at: datetime | None
+    metadata: dict[str, Any]
+
+
 class UpdateAccountStatusRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

@@ -16,12 +16,16 @@ from app.core.errors import AppError
 from app.core.identity_security import ProductCurrentUser
 from app.models.db import AuthToken, User
 from app.models.identity import AccountStatusEvent, UserProductProfile, UserSession
+from app.models.product_cv import CvAnalysis, CvScan, ProductCV
+from app.models.product_interview import ProductInterview, ProductInterviewReport
 from app.models.product_admin_ops import AuditChainHead, ModelConfiguration, OperationalJob, PrivilegedAuditEvent, PrivilegedCommand
-from app.models.product_jobs import JobSource, JobSourceRecord, ProductJob
-from app.models.product_recommendations import JobModerationCase
+from app.models.product_jobs import JobSearchRun, JobSource, JobSourceRecord, ProductJob
+from app.models.product_privacy import PrivacyRequest
+from app.models.product_recommendations import JobApplication, JobModerationCase, RecommendationRun
 from app.models.provider_ops import ProviderUsageEvent
 from app.schemas.product_admin_ops import (
     AdminUserSummary,
+    AdminResourceSummary,
     AccountStatusView,
     BackgroundJobPage,
     BackgroundJobView,
@@ -110,14 +114,21 @@ class ProductAdminOpsService:
     def model_view(record: ModelConfiguration) -> ModelConfigurationView:
         return ModelConfigurationView(id=record.id, purpose=record.purpose, version=record.version, status=record.status, provider=record.provider, model=record.model, output_schema_version=record.output_schema_version, created_at=record.created_at)
 
-    def job_sources(self, current: ProductCurrentUser, context: dict[str, Any]) -> list[JobSourceAdminView]:
-        sources = list(self.db.scalars(select(JobSource).order_by(JobSource.key)))
+    def job_sources(self, current: ProductCurrentUser, context: dict[str, Any], source_status: str | None = None, key: str | None = None, period_start: datetime | None = None, period_end: datetime | None = None) -> list[JobSourceAdminView]:
+        start, end = self._period(period_start, period_end, 90)
+        source_query = select(JobSource)
+        if source_status:
+            source_query = source_query.where(JobSource.status == source_status)
+        if key:
+            source_query = source_query.where(JobSource.key == key)
+        sources = list(self.db.scalars(source_query.order_by(JobSource.key)))
         output = []
         for source in sources:
-            total = self.db.scalar(select(func.count()).select_from(JobSourceRecord).where(JobSourceRecord.source_id == source.id)) or 0
-            stale = self.db.scalar(select(func.count()).select_from(JobSourceRecord).where(JobSourceRecord.source_id == source.id, JobSourceRecord.status.in_(["stale", "unavailable"]))) or 0
+            record_filter = [JobSourceRecord.source_id == source.id, JobSourceRecord.last_checked_at >= start, JobSourceRecord.last_checked_at < end]
+            total = self.db.scalar(select(func.count()).select_from(JobSourceRecord).where(*record_filter)) or 0
+            stale = self.db.scalar(select(func.count()).select_from(JobSourceRecord).where(*record_filter, JobSourceRecord.status.in_(["stale", "unavailable"]))) or 0
             output.append(JobSourceAdminView(id=source.id, key=source.key, name=source.display_name, status=source.status, quality_score=source.quality_score, last_healthy_at=source.last_healthy_at, stale_rate=stale / total if total else None))
-        self._audit(current, "job_source.list", "job_source", None, None, context, {"result_count": len(output)})
+        self._audit(current, "job_source.list", "job_source", None, None, context, {"result_count": len(output), "status": source_status, "key": key, "period_start": start.isoformat(), "period_end": end.isoformat()})
         self.db.commit()
         return output
 
@@ -152,6 +163,45 @@ class ProductAdminOpsService:
         self._audit(current, "user.search", "user", None, None, context, {"query_hash": hashlib.sha256(normalized.encode()).hexdigest(), "result_count": len(output), "pii_unmasked": can_view_pii})
         self.db.commit()
         return output
+
+    def resource(self, current: ProductCurrentUser, resource_type: str, resource_id: str, context: dict[str, Any]) -> AdminResourceSummary:
+        models = {
+            "cv": ProductCV,
+            "cv_scan": CvScan,
+            "cv_analysis": CvAnalysis,
+            "interview": ProductInterview,
+            "interview_report": ProductInterviewReport,
+            "job": ProductJob,
+            "job_search_run": JobSearchRun,
+            "recommendation_run": RecommendationRun,
+            "job_application": JobApplication,
+            "privacy_request": PrivacyRequest,
+            "provider_usage": ProviderUsageEvent,
+        }
+        model = models.get(resource_type)
+        if model is None:
+            raise AppError(422, "UNSUPPORTED_RESOURCE_TYPE", "Resource type is not searchable")
+        record = self.db.get(model, resource_id)
+        if record is None:
+            raise AppError(404, "RESOURCE_NOT_FOUND", "Resource was not found")
+        metadata: dict[str, Any] = {}
+        if isinstance(record, ProductJob):
+            metadata = {"title": record.title, "company_name": record.company_name}
+        elif isinstance(record, ProviderUsageEvent):
+            metadata = {"provider": record.provider, "purpose": record.purpose, "error_code": record.error_code}
+        elif isinstance(record, ProductInterview):
+            metadata = {"target_role": record.target_role, "interview_type": record.interview_type}
+        summary = AdminResourceSummary(
+            resource_type=resource_type,
+            id=record.id,
+            owner_user_id=getattr(record, "user_id", None),
+            status=getattr(record, "status", None),
+            created_at=getattr(record, "created_at", getattr(record, "occurred_at", None)),
+            metadata=metadata,
+        )
+        self._audit(current, "resource.read", resource_type, record.id, None, context, {"owner_user_id": summary.owner_user_id})
+        self.db.commit()
+        return summary
 
     def update_account_status(
         self,
@@ -242,12 +292,16 @@ class ProductAdminOpsService:
         self.db.commit()
         return response
 
-    def moderation_cases(self, current: ProductCurrentUser, case_status: str | None, context: dict[str, Any]) -> list[ModerationCaseView]:
+    def moderation_cases(self, current: ProductCurrentUser, case_status: str | None, source_id: str | None, period_start: datetime | None, period_end: datetime | None, context: dict[str, Any]) -> list[ModerationCaseView]:
+        start, end = self._period(period_start, period_end, 90)
         statement = select(JobModerationCase)
         if case_status:
             statement = statement.where(JobModerationCase.status == case_status)
+        statement = statement.where(JobModerationCase.created_at >= start, JobModerationCase.created_at < end)
+        if source_id:
+            statement = statement.join(JobSourceRecord, JobSourceRecord.job_id == JobModerationCase.job_id).where(JobSourceRecord.source_id == source_id).distinct()
         records = list(self.db.scalars(statement.order_by(JobModerationCase.created_at.desc()).limit(200)))
-        self._audit(current, "moderation_case.list", "moderation_case", None, None, context, {"status": case_status, "result_count": len(records)})
+        self._audit(current, "moderation_case.list", "moderation_case", None, None, context, {"status": case_status, "source_id": source_id, "period_start": start.isoformat(), "period_end": end.isoformat(), "result_count": len(records)})
         self.db.commit()
         return [self.moderation_view(item) for item in records]
 
@@ -425,6 +479,14 @@ class ProductAdminOpsService:
     @staticmethod
     def _hash(payload: dict[str, Any]) -> str:
         return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+
+    @staticmethod
+    def _period(period_start: datetime | None, period_end: datetime | None, maximum_days: int) -> tuple[datetime, datetime]:
+        end = period_end or _utcnow()
+        start = period_start or end - timedelta(days=30)
+        if end <= start or end - start > timedelta(days=maximum_days):
+            raise AppError(422, "INVALID_TIME_RANGE", "Time range is invalid or exceeds the allowed window")
+        return start, end
 
     @staticmethod
     def _encode_cursor(created_at: datetime, item_id: str) -> str:
