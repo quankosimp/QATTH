@@ -1119,14 +1119,37 @@ paths:
   /v1/billing/catalog:
     get:
       tags: [Billing]
-      summary: Get available plans and prices
+      summary: Get the active subscription and top-up catalog
       operationId: getBillingCatalog
       security: []
       x-implementation-status: planned
-      x-requirement-ids: [FR-BILL-001]
+      x-requirement-ids: [FR-BILL-001, FR-BILL-007]
       responses:
         '200':
-          description: Public plan catalog.
+          description: Active versioned billing catalog.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BillingCatalog'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/billing/feature-pricing:
+    get:
+      tags: [Billing]
+      summary: Get effective feature credit costs
+      operationId: getFeatureCreditPricing
+      security: []
+      x-implementation-status: planned
+      x-requirement-ids: [FR-BILL-001, FR-BILL-007]
+      responses:
+        '200':
+          description: Feature credit pricing for the active catalog.
           content:
             application/json:
               schema:
@@ -1137,7 +1160,30 @@ paths:
                       data:
                         type: array
                         items:
-                          $ref: '#/components/schemas/Plan'
+                          $ref: '#/components/schemas/FeatureCreditPrice'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/billing/signup-trial-policy:
+    get:
+      tags: [Billing]
+      summary: Get the public signup trial policy
+      operationId: getSignupTrialPolicy
+      security: []
+      x-implementation-status: planned
+      x-requirement-ids: [FR-BILL-009]
+      responses:
+        '200':
+          description: Public-safe active trial policy.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SignupTrialPolicy'
         default:
           $ref: '#/components/responses/Error'
 
@@ -1147,10 +1193,10 @@ paths:
       summary: Get the current subscription
       operationId: getCurrentSubscription
       x-implementation-status: planned
-      x-requirement-ids: [FR-BILL-001, FR-BILL-002]
+      x-requirement-ids: [FR-BILL-001, FR-BILL-002, FR-BILL-008]
       responses:
         '200':
-          description: Subscription and entitlements.
+          description: Subscription, active offer and current period.
           content:
             application/json:
               schema:
@@ -1166,16 +1212,16 @@ paths:
   /v1/billing/credits:
     get:
       tags: [Billing]
-      summary: Get credit balance and ledger
+      summary: Get bucketed credit balance and ledger
       operationId: getCreditAccount
       x-implementation-status: planned
-      x-requirement-ids: [FR-BILL-004, FR-BILL-006]
+      x-requirement-ids: [FR-BILL-004, FR-BILL-006, FR-BILL-010, FR-BILL-011]
       parameters:
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
       responses:
         '200':
-          description: Credit account and ledger page.
+          description: Credit account, source breakdown, buckets and ledger page.
           content:
             application/json:
               schema:
@@ -1191,10 +1237,10 @@ paths:
   /v1/billing/checkout-sessions:
     post:
       tags: [Billing]
-      summary: Create a checkout session
+      summary: Create a provider-neutral checkout session
       operationId: createCheckoutSession
       x-implementation-status: planned
-      x-requirement-ids: [FR-BILL-002, FR-BILL-003]
+      x-requirement-ids: [FR-BILL-002, FR-BILL-003, FR-BILL-007]
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -1205,7 +1251,7 @@ paths:
               $ref: '#/components/schemas/CreateCheckoutRequest'
       responses:
         '201':
-          description: Checkout redirect.
+          description: Checkout redirect for the resolved internal offer.
           content:
             application/json:
               schema:
@@ -1229,7 +1275,7 @@ paths:
         - $ref: '#/components/parameters/IdempotencyKey'
       responses:
         '201':
-          description: Portal redirect.
+          description: Provider-neutral portal redirect.
           content:
             application/json:
               schema:
@@ -1252,12 +1298,12 @@ paths:
           pattern: '^[a-z0-9_-]+$'
     post:
       tags: [Billing]
-      summary: Receive a payment provider webhook
+      summary: Receive and normalize a payment provider webhook
       operationId: receivePaymentWebhook
       security:
         - webhookSignature: []
       x-implementation-status: planned
-      x-requirement-ids: [FR-BILL-003]
+      x-requirement-ids: [FR-BILL-003, FR-BILL-008, FR-BILL-009, FR-BILL-011]
       requestBody:
         required: true
         content:
@@ -1270,7 +1316,6 @@ paths:
           description: Verified event accepted or previously processed.
         default:
           $ref: '#/components/responses/Error'
-
   /v1/privacy/exports:
     post:
       tags: [Privacy]
@@ -1359,6 +1404,182 @@ paths:
                     properties:
                       data:
                         $ref: '#/components/schemas/PrivacyRequest'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/admin/billing/catalog-versions:
+    get:
+      tags: [Admin, Billing]
+      summary: List billing catalog versions
+      operationId: listBillingCatalogVersions
+      x-implementation-status: planned
+      x-requirement-ids: [FR-BILL-007]
+      security:
+        - bearerAuth: [admin:billing:read]
+      responses:
+        '200':
+          description: Catalog versions ordered by creation time.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/BillingCatalogVersion'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Admin, Billing]
+      summary: Create a draft billing catalog version
+      operationId: createBillingCatalogVersion
+      x-implementation-status: planned
+      x-requirement-ids: [FR-BILL-007]
+      security:
+        - bearerAuth: [admin:billing:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBillingCatalogVersionRequest'
+      responses:
+        '201':
+          description: Draft catalog version created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BillingCatalogVersion'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/admin/billing/catalog-versions/{catalog_version_id}/activate:
+    parameters:
+      - name: catalog_version_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [Admin, Billing]
+      summary: Activate an immutable billing catalog version
+      operationId: activateBillingCatalogVersion
+      x-implementation-status: planned
+      x-requirement-ids: [FR-BILL-007]
+      security:
+        - bearerAuth: [admin:billing:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [effective_from, reason]
+              properties:
+                effective_from:
+                  type: string
+                  format: date-time
+                reason:
+                  type: string
+                  minLength: 3
+                  maxLength: 500
+              additionalProperties: false
+      responses:
+        '200':
+          description: Catalog activated for its market and currency.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BillingCatalogVersion'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/admin/billing/feature-pricing/{feature_key}:
+    parameters:
+      - name: feature_key
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: '^[a-z][a-z0-9_]{1,63}$'
+    put:
+      tags: [Admin, Billing]
+      summary: Set a feature price in a draft catalog
+      operationId: setFeatureCreditPrice
+      x-implementation-status: planned
+      x-requirement-ids: [FR-BILL-007]
+      security:
+        - bearerAuth: [admin:billing:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateFeatureCreditPriceRequest'
+      responses:
+        '200':
+          description: Draft feature price updated.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/FeatureCreditPrice'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/admin/billing/signup-trial-policy:
+    put:
+      tags: [Admin, Billing]
+      summary: Publish a signup trial policy version
+      operationId: updateSignupTrialPolicy
+      x-implementation-status: planned
+      x-requirement-ids: [FR-BILL-009]
+      security:
+        - bearerAuth: [admin:billing:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSignupTrialPolicyRequest'
+      responses:
+        '200':
+          description: Published signup trial policy.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SignupTrialPolicy'
         default:
           $ref: '#/components/responses/Error'
 
@@ -1565,6 +1786,7 @@ components:
             admin:model:read: Read AI configuration.
             admin:model:write: Write AI configuration.
             admin:jobs:read: Read job source operations.
+            admin:billing:read: Read billing catalog and operations.
             admin:billing:write: Adjust credits.
             ops:jobs:read: Read background jobs.
             ops:jobs:write: Retry background jobs.
@@ -2763,68 +2985,225 @@ components:
           type: [string, 'null']
           format: date-time
 
-    Plan:
-      type: object
-      required: [id, name, prices, entitlements]
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        prices:
-          type: array
-          items:
-            $ref: '#/components/schemas/PlanPrice'
-        entitlements:
-          type: object
-          additionalProperties: true
+    BillingOfferType:
+      type: string
+      enum: [subscription, topup]
 
-    PlanPrice:
+    BillingOffer:
       type: object
-      required: [id, amount_minor, currency, interval]
+      required:
+        - id
+        - code
+        - display_name
+        - offer_type
+        - amount_minor
+        - currency
+        - credit_grant
+        - status
+        - catalog_version
       properties:
         id:
           type: string
+          format: uuid
+        code:
+          type: string
+          pattern: '^[A-Z][A-Z0-9_]{2,63}$'
+        display_name:
+          type: string
+        offer_type:
+          $ref: '#/components/schemas/BillingOfferType'
         amount_minor:
           type: integer
-          minimum: 0
+          minimum: 1
         currency:
           type: string
-          pattern: '^[A-Z]{3}$'
-        interval:
+          const: VND
+        billing_interval:
+          type: [string, 'null']
+          enum: [month, null]
+        credit_grant:
+          type: integer
+          minimum: 1
+        status:
           type: string
-          enum: [month, year, one_time]
+          enum: [active, inactive]
+        catalog_version:
+          type: string
+        effective_from:
+          type: string
+          format: date-time
+        effective_to:
+          type: [string, 'null']
+          format: date-time
+
+    FeatureCreditPrice:
+      type: object
+      required: [feature_key, credit_cost, catalog_version]
+      properties:
+        feature_key:
+          type: string
+          pattern: '^[a-z][a-z0-9_]{1,63}$'
+        credit_cost:
+          type: integer
+          minimum: 0
+        maximum_duration_minutes:
+          type: [integer, 'null']
+          minimum: 1
+        catalog_version:
+          type: string
+
+    BillingCatalog:
+      type: object
+      required: [catalog_version, currency, subscription_offers, topup_offers, feature_prices]
+      properties:
+        catalog_version:
+          type: string
+        currency:
+          type: string
+          const: VND
+        effective_from:
+          type: string
+          format: date-time
+        subscription_offers:
+          type: array
+          items:
+            $ref: '#/components/schemas/BillingOffer'
+        topup_offers:
+          type: array
+          items:
+            $ref: '#/components/schemas/BillingOffer'
+        feature_prices:
+          type: array
+          items:
+            $ref: '#/components/schemas/FeatureCreditPrice'
+
+    SignupTrialPolicy:
+      type: object
+      required:
+        - policy_key
+        - enabled
+        - trigger
+        - credit_grant
+        - valid_days
+        - grants_per_user
+        - policy_version
+      properties:
+        policy_key:
+          type: string
+          const: SIGNUP_VERIFIED_EMAIL
+        enabled:
+          type: boolean
+        trigger:
+          type: string
+          const: verified_email
+        credit_grant:
+          type: integer
+          minimum: 1
+        valid_days:
+          type: integer
+          minimum: 1
+        grants_per_user:
+          type: integer
+          const: 1
+        policy_version:
+          type: string
+        effective_from:
+          type: string
+          format: date-time
 
     Subscription:
       type: object
-      required: [status, entitlements]
+      required: [status, current_period_start, current_period_end]
       properties:
         id:
           type: [string, 'null']
           format: uuid
-        plan_id:
-          type: [string, 'null']
+        offer:
+          anyOf:
+            - $ref: '#/components/schemas/BillingOffer'
+            - type: 'null'
         status:
           type: string
           enum: [none, trialing, active, past_due, cancelled, expired]
+        current_period_start:
+          type: [string, 'null']
+          format: date-time
         current_period_end:
           type: [string, 'null']
           format: date-time
-        entitlements:
-          type: object
-          additionalProperties: true
-
-    CreditAccount:
-      type: object
-      required: [balance, reserved, available, entries]
-      properties:
-        balance:
+        cancel_at_period_end:
+          type: boolean
+        current_period_credit_grant:
           type: integer
-        reserved:
+          minimum: 0
+
+    CreditBucket:
+      type: object
+      required: [id, bucket_type, granted, available, reserved, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        bucket_type:
+          type: string
+          enum: [trial, subscription, topup, adjustment]
+        source_reference:
+          type: [string, 'null']
+        granted:
           type: integer
           minimum: 0
         available:
           type: integer
+          minimum: 0
+        reserved:
+          type: integer
+          minimum: 0
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    CreditAccount:
+      type: object
+      required:
+        - status
+        - available
+        - reserved
+        - trial_available
+        - subscription_available
+        - topup_available
+        - buckets
+        - entries
+      properties:
+        status:
+          type: string
+          enum: [active, review, locked, closed]
+        available:
+          type: integer
+          minimum: 0
+        reserved:
+          type: integer
+          minimum: 0
+        trial_available:
+          type: integer
+          minimum: 0
+        subscription_available:
+          type: integer
+          minimum: 0
+        topup_available:
+          type: integer
+          minimum: 0
+        adjustment_available:
+          type: integer
+        trial_expires_at:
+          type: [string, 'null']
+          format: date-time
+        buckets:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreditBucket'
         entries:
           type: array
           items:
@@ -2834,18 +3213,28 @@ components:
 
     CreditLedgerEntry:
       type: object
-      required: [id, amount, type, occurred_at]
+      required: [id, amount, entry_type, balance_after, occurred_at]
       properties:
         id:
           type: string
           format: uuid
+        bucket_id:
+          type: [string, 'null']
+          format: uuid
         amount:
           type: integer
-        type:
+          not:
+            const: 0
+        entry_type:
           type: string
-          enum: [grant, charge, refund, adjustment, expiry]
+          enum: [GRANT, CHARGE, EXPIRE, REFUND, REVERSAL, ADJUSTMENT]
+        balance_after:
+          type: integer
+          minimum: 0
         description:
           type: string
+        reference_type:
+          type: [string, 'null']
         reference_id:
           type: [string, 'null']
         occurred_at:
@@ -2854,10 +3243,11 @@ components:
 
     CreateCheckoutRequest:
       type: object
-      required: [price_id, success_url, cancel_url]
+      required: [offer_id, success_url, cancel_url]
       properties:
-        price_id:
+        offer_id:
           type: string
+          format: uuid
         success_url:
           type: string
           format: uri
@@ -2868,8 +3258,14 @@ components:
 
     RedirectSession:
       type: object
-      required: [url, expires_at]
+      required: [id, offer_id, url, expires_at]
       properties:
+        id:
+          type: string
+          format: uuid
+        offer_id:
+          type: string
+          format: uuid
         url:
           type: string
           format: uri
@@ -2877,6 +3273,102 @@ components:
           type: string
           format: date-time
 
+    BillingCatalogVersion:
+      type: object
+      required: [id, version_key, market, currency, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        version_key:
+          type: string
+        market:
+          type: string
+          const: VN
+        currency:
+          type: string
+          const: VND
+        status:
+          type: string
+          enum: [draft, active, retired]
+        effective_from:
+          type: [string, 'null']
+          format: date-time
+        effective_to:
+          type: [string, 'null']
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        published_at:
+          type: [string, 'null']
+          format: date-time
+
+    CreateBillingCatalogVersionRequest:
+      type: object
+      required: [version_key, market, currency, offers, feature_prices]
+      properties:
+        version_key:
+          type: string
+          minLength: 3
+          maxLength: 100
+        market:
+          type: string
+          const: VN
+        currency:
+          type: string
+          const: VND
+        offers:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/BillingOffer'
+        feature_prices:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/FeatureCreditPrice'
+      additionalProperties: false
+
+    UpdateFeatureCreditPriceRequest:
+      type: object
+      required: [catalog_version_id, credit_cost]
+      properties:
+        catalog_version_id:
+          type: string
+          format: uuid
+        credit_cost:
+          type: integer
+          minimum: 0
+        maximum_duration_minutes:
+          type: [integer, 'null']
+          minimum: 1
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 500
+      additionalProperties: false
+
+    UpdateSignupTrialPolicyRequest:
+      type: object
+      required: [enabled, credit_grant, valid_days, reason]
+      properties:
+        enabled:
+          type: boolean
+        credit_grant:
+          type: integer
+          minimum: 1
+        valid_days:
+          type: integer
+          minimum: 1
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 500
+        effective_from:
+          type: string
+          format: date-time
+      additionalProperties: false
     PrivacyRequest:
       type: object
       required: [id, type, status, requested_at]
