@@ -36,3 +36,17 @@ def test_job_search_accepts_idempotency_key_and_sse_replay_header() -> None:
     }
     assert "Idempotency-Key" in create_headers
     assert "Last-Event-ID" in event_headers
+    idempotency = next(
+        item
+        for item in paths["/v1/job-search-runs"]["post"]["parameters"]
+        if item["name"] == "Idempotency-Key"
+    )
+    assert idempotency["required"] is True
+
+
+def test_job_search_has_structured_salary_filters_and_provider_lineage() -> None:
+    schemas = app.openapi()["components"]["schemas"]
+    filters = schemas["JobSearchFilters"]["properties"]
+    assert {"salary_min_minor", "salary_max_minor", "salary_currency", "salary_period"}.issubset(filters)
+    run = schemas["JobSearchRunView"]["properties"]
+    assert {"provider_run_id", "provider_model", "provider_usage", "provider_estimated_cost_minor"}.issubset(run)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -20,6 +21,7 @@ class OpenAIJobsAdapter:
         embedding_runtime = runtime_model_configuration("job_embedding", "openai", os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"))
         self.search_model = search_runtime["model"]
         self.search_configuration = search_runtime["configuration"]
+        self.search_runtime = search_runtime
         self.embedding_model = embedding_runtime["model"]
         self.timeout = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "120"))
 
@@ -35,7 +37,7 @@ class OpenAIJobsAdapter:
                     "items": {
                         "type": "object",
                         "additionalProperties": False,
-                        "required": ["title", "company_name", "location", "remote_mode", "employment_type", "seniority", "description", "skills", "source_url", "source_job_id", "posted_at"],
+                        "required": ["title", "company_name", "location", "remote_mode", "employment_type", "seniority", "salary_min_minor", "salary_max_minor", "salary_currency", "salary_period", "description", "skills", "source_url", "source_job_id", "posted_at"],
                         "properties": {
                             "title": {"type": "string"},
                             "company_name": {"type": "string"},
@@ -43,6 +45,10 @@ class OpenAIJobsAdapter:
                             "remote_mode": {"type": "string", "enum": ["onsite", "hybrid", "remote", "unknown"]},
                             "employment_type": {"type": ["string", "null"]},
                             "seniority": {"type": ["string", "null"]},
+                            "salary_min_minor": {"type": ["integer", "null"], "minimum": 0},
+                            "salary_max_minor": {"type": ["integer", "null"], "minimum": 0},
+                            "salary_currency": {"type": ["string", "null"]},
+                            "salary_period": {"type": ["string", "null"]},
                             "description": {"type": ["string", "null"]},
                             "skills": {"type": "array", "items": {"type": "string"}},
                             "source_url": {"type": "string"},
@@ -91,7 +97,7 @@ class OpenAIJobsAdapter:
             job["source_url"] = citation["url"]
             job["citation_title"] = citation.get("title")
             accepted.append(job)
-        return accepted, {"provider_run_id": raw.get("id"), "citations": citations, "usage": raw.get("usage", {})}
+        return accepted, {**self._metadata(raw, "job-search-v1"), "citations": citations}
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
@@ -110,7 +116,7 @@ class OpenAIJobsAdapter:
         except (httpx.HTTPError, ValueError, KeyError) as exc:
             raise AppError(502, "EMBEDDING_PROVIDER_ERROR", "Embedding request failed", retryable=True) from exc
 
-    def explain(self, candidate: dict[str, Any], job: dict[str, Any]) -> dict[str, Any]:
+    def explain(self, candidate: dict[str, Any], job: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         schema = {
             "type": "object",
             "additionalProperties": False,
@@ -134,9 +140,33 @@ class OpenAIJobsAdapter:
         )
         text, _ = self._text_and_citations(raw)
         try:
-            return json.loads(text)
+            return json.loads(text), self._metadata(raw, "job-explanation-v1")
         except json.JSONDecodeError as exc:
             raise AppError(502, "EXPLANATION_RESPONSE_INVALID", "Match explanation was invalid", retryable=True) from exc
+
+    def _metadata(self, raw: dict[str, Any], fallback_prompt_version: str) -> dict[str, Any]:
+        usage = raw.get("usage", {})
+        return {
+            "provider_run_id": raw.get("id"),
+            "model": self.search_model,
+            "model_configuration_id": self.search_runtime.get("id"),
+            "prompt_version": str(
+                self.search_configuration.get("prompt_version")
+                or self.search_runtime.get("version")
+                or fallback_prompt_version
+            ),
+            "usage": usage,
+            "estimated_cost_minor": self._estimate_cost(usage),
+        }
+
+    def _estimate_cost(self, usage: dict[str, Any]) -> int | None:
+        input_rate = self.search_configuration.get("input_cost_minor_per_million")
+        output_rate = self.search_configuration.get("output_cost_minor_per_million")
+        if input_rate is None or output_rate is None:
+            return None
+        input_tokens = int(usage.get("input_tokens") or 0)
+        output_tokens = int(usage.get("output_tokens") or 0)
+        return math.ceil((input_tokens * int(input_rate) + output_tokens * int(output_rate)) / 1_000_000)
 
     def _responses(self, body: dict[str, Any]) -> dict[str, Any]:
         self._require_key()

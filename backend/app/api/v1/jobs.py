@@ -25,13 +25,32 @@ def search_indexed_jobs(
     location: str | None = None,
     remote_mode: str | None = None,
     skills: str | None = None,
+    salary_min_minor: int | None = Query(default=None, ge=0),
+    salary_max_minor: int | None = Query(default=None, ge=0),
+    salary_currency: str | None = Query(default=None, min_length=3, max_length=3),
+    salary_period: str | None = Query(default=None, min_length=1, max_length=20),
     cursor: str | None = None,
     limit: int = Query(default=20, ge=1, le=100),
     current: ProductCurrentUser = Depends(get_product_user),
     db: Session = Depends(get_db),
 ):
     skill_list = [value.strip() for value in (skills or "").split(",") if value.strip()]
-    return make_response(ProductJobSearchService(db).indexed_jobs(q, location, remote_mode, skill_list, cursor, limit), request=request)
+    return make_response(
+        ProductJobSearchService(db).indexed_jobs(
+            current,
+            q,
+            location,
+            remote_mode,
+            skill_list,
+            salary_min_minor,
+            salary_max_minor,
+            salary_currency,
+            salary_period,
+            cursor,
+            limit,
+        ),
+        request=request,
+    )
 
 
 @router.get("/jobs/{job_id}", response_model=APIResponse[JobView])
@@ -51,7 +70,7 @@ def create_job_search_run(
     request: Request,
     current: ProductCurrentUser = Depends(get_product_user),
     db: Session = Depends(get_db),
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=255),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
 ):
     service = ProductJobSearchService(db)
     return make_response(

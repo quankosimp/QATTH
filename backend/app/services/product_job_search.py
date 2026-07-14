@@ -17,11 +17,12 @@ from sqlalchemy.orm import Session
 from app.core.errors import AppError
 from app.core.identity_security import ProductCurrentUser
 from app.models.identity import UserProductProfile
-from app.models.product_cv import ProductCvVersion
+from app.models.product_cv import ProductCV, ProductCvVersion
 from app.models.product_interview import ProductInterview, ProductInterviewReport
 from app.models.product_jobs import (
     CandidateProfile,
     JobEmbedding,
+    JobCatalogMaintenanceRun,
     JobSearchEvent,
     JobSearchDispatch,
     JobSearchResult,
@@ -44,6 +45,7 @@ from app.schemas.product_jobs import (
 from app.services.openai_jobs import OpenAIJobsAdapter
 from app.services.object_storage import ObjectStorage
 from app.services.safe_job_fetch import SafeJobFetcher
+from app.services.identity import IdentityService
 
 
 def _utcnow() -> datetime:
@@ -71,31 +73,34 @@ class ProductJobSearchService:
         self,
         current: ProductCurrentUser,
         payload: CreateJobSearchRequest,
-        idempotency_key: str | None,
+        idempotency_key: str,
     ) -> JobSearchRun:
         request_hash = hashlib.sha256(
             payload.model_dump_json(exclude_none=False).encode("utf-8")
         ).hexdigest()
-        if idempotency_key:
-            existing = self.db.scalar(
-                select(JobSearchRun).where(
-                    JobSearchRun.user_id == current.id,
-                    JobSearchRun.idempotency_key == idempotency_key,
-                )
+        existing = self.db.scalar(
+            select(JobSearchRun).where(
+                JobSearchRun.user_id == current.id,
+                JobSearchRun.idempotency_key == idempotency_key,
             )
-            if existing is not None:
-                if existing.request_hash != request_hash:
-                    raise AppError(
-                        409,
-                        "IDEMPOTENCY_KEY_REUSED",
-                        "Idempotency-Key was already used with a different request",
-                    )
-                return existing
+        )
+        if existing is not None:
+            if existing.request_hash != request_hash:
+                raise AppError(
+                    409,
+                    "IDEMPOTENCY_KEY_REUSED",
+                    "Idempotency-Key was already used with a different request",
+                )
+            return existing
+        IdentityService(self.db).require_consent(current.id)
         if payload.cv_version_id:
             version = self.db.scalar(
-                select(ProductCvVersion).where(
+                select(ProductCvVersion)
+                .join(ProductCV, ProductCV.id == ProductCvVersion.cv_id)
+                .where(
                     ProductCvVersion.id == payload.cv_version_id,
                     ProductCvVersion.user_id == current.id,
+                    ProductCV.status == "active",
                 )
             )
             if version is None:
@@ -186,6 +191,11 @@ class ProductJobSearchService:
             try:
                 jobs, provider = OpenAIJobsAdapter().live_search(run.query_text, run.filters, run.maximum_results)
                 run.provider = "openai_web_search"
+                run.provider_run_id = provider.get("provider_run_id")
+                run.provider_model = provider.get("model")
+                run.provider_model_configuration_id = provider.get("model_configuration_id")
+                run.provider_usage = provider.get("usage", {})
+                run.provider_estimated_cost_minor = provider.get("estimated_cost_minor")
                 run.progress = {**run.progress, "jobs_discovered": len(jobs)}
                 self.db.commit()
                 self.emit(run.id, "source.progress", {"source": "openai_web_search", "discovered": len(jobs), "provider_run_id": provider.get("provider_run_id")})
@@ -207,6 +217,9 @@ class ProductJobSearchService:
                         job = self._verify_and_upsert(item, provider)
                     except AppError as exc:
                         self._degrade(run, exc.code)
+                        continue
+                    if not self._job_matches_filters(job, run.filters):
+                        self.emit(run.id, "job.filtered", {"job_id": job.id, "reason": "structured_filters"})
                         continue
                     self.emit(run.id, "job.verified", {"job_id": job.id})
                     row = self._score(job, run.query_text, candidate, lexical=0.0, vector=0.0)
@@ -260,14 +273,34 @@ class ProductJobSearchService:
 
     def indexed_jobs(
         self,
+        current: ProductCurrentUser,
         q: str | None,
         location: str | None,
         remote_mode: str | None,
         skills: list[str],
+        salary_min_minor: int | None,
+        salary_max_minor: int | None,
+        salary_currency: str | None,
+        salary_period: str | None,
         cursor: str | None,
         limit: int,
     ) -> JobPage:
-        filters = {"locations": [location] if location else [], "remote_modes": [remote_mode] if remote_mode else [], "skills": skills, "verified_only": True, "employment_types": []}
+        IdentityService(self.db).require_consent(current.id)
+        if (salary_min_minor is not None or salary_max_minor is not None) and not salary_currency:
+            raise AppError(422, "SALARY_CURRENCY_REQUIRED", "salary_currency is required for salary filters")
+        if salary_min_minor is not None and salary_max_minor is not None and salary_min_minor > salary_max_minor:
+            raise AppError(422, "INVALID_SALARY_RANGE", "salary_min_minor must not exceed salary_max_minor")
+        filters = {
+            "locations": [location] if location else [],
+            "remote_modes": [remote_mode] if remote_mode else [],
+            "skills": skills,
+            "verified_only": True,
+            "employment_types": [],
+            "salary_min_minor": salary_min_minor,
+            "salary_max_minor": salary_max_minor,
+            "salary_currency": salary_currency.upper() if salary_currency else None,
+            "salary_period": salary_period,
+        }
         candidate_rows = self._hybrid_candidates(q or "IT", filters, None)
         jobs = [row["job"] for row in candidate_rows]
         if cursor:
@@ -308,6 +341,12 @@ class ProductJobSearchService:
             query=run.query_text,
             progress=run.progress or {},
             degraded_reasons=run.degraded_reasons or [],
+            provider=run.provider,
+            provider_run_id=run.provider_run_id,
+            provider_model=run.provider_model,
+            provider_model_configuration_id=run.provider_model_configuration_id,
+            provider_usage=run.provider_usage,
+            provider_estimated_cost_minor=run.provider_estimated_cost_minor,
             events_url="/v1/job-search-runs/" + run.id + "/events",
             results_url="/v1/job-search-runs/" + run.id + "/results",
             created_at=run.created_at,
@@ -344,9 +383,16 @@ class ProductJobSearchService:
 
     def mark_stale_jobs(self) -> int:
         now = _utcnow()
+        maintenance = JobCatalogMaintenanceRun(operation="mark_stale", status="running", started_at=now)
+        self.db.add(maintenance)
+        self.db.flush()
         records = list(self.db.scalars(select(ProductJob).where(ProductJob.status == "active", ProductJob.expires_at.is_not(None), ProductJob.expires_at < now)))
+        maintenance.scanned_count = len(records)
         for job in records:
             job.status = "stale"
+        maintenance.affected_count = len(records)
+        maintenance.status = "completed"
+        maintenance.completed_at = _utcnow()
         self.db.commit()
         return len(records)
 
@@ -417,6 +463,18 @@ class ProductJobSearchService:
         employment = filters.get("employment_types") or []
         if employment:
             base = base.where(ProductJob.employment_type.in_(employment))
+        salary_currency = filters.get("salary_currency")
+        salary_period = filters.get("salary_period")
+        salary_min = filters.get("salary_min_minor")
+        salary_max = filters.get("salary_max_minor")
+        if salary_currency:
+            base = base.where(ProductJob.salary_currency == str(salary_currency).upper())
+        if salary_period:
+            base = base.where(ProductJob.salary_period == salary_period)
+        if salary_min is not None:
+            base = base.where(func.coalesce(ProductJob.salary_max_minor, ProductJob.salary_min_minor) >= int(salary_min))
+        if salary_max is not None:
+            base = base.where(func.coalesce(ProductJob.salary_min_minor, ProductJob.salary_max_minor) <= int(salary_max))
         dialect = self.db.bind.dialect.name if self.db.bind else "unknown"
         normalized_skills = self._normalize_skills(filters.get("skills") or [])
         for skill in normalized_skills:
@@ -478,6 +536,11 @@ class ProductJobSearchService:
         job.remote_mode = item.get("remote_mode") or "unknown"
         job.employment_type = item.get("employment_type")
         job.seniority = item.get("seniority")
+        job.salary_min_minor = self._minor_value(item.get("salary_min_minor"))
+        job.salary_max_minor = self._minor_value(item.get("salary_max_minor"))
+        currency = str(item.get("salary_currency") or "").upper()
+        job.salary_currency = currency if len(currency) == 3 else None
+        job.salary_period = str(item.get("salary_period") or "")[:20] or None
         job.description_text = description
         job.description_completeness = "full" if page.description and len(page.description) > 1000 else ("partial" if description else "unavailable")
         job.skills = self._normalize_skills(item.get("skills", []))
@@ -587,11 +650,18 @@ class ProductJobSearchService:
             self.db.flush()
             if index <= 3:
                 try:
-                    explanation = OpenAIJobsAdapter().explain(candidate.profile_json if candidate else {"query": run.query_text}, result.result_snapshot)
+                    explanation, provider = OpenAIJobsAdapter().explain(candidate.profile_json if candidate else {"query": run.query_text}, result.result_snapshot)
                     result.explanation = explanation
                     result.reasons = explanation.get("reasons", result.reasons)
                     result.gaps = explanation.get("gaps", result.gaps)
                     result.explanation_status = "ready"
+                    result.explanation_provider = "openai"
+                    result.explanation_model = provider.get("model")
+                    result.explanation_model_configuration_id = provider.get("model_configuration_id")
+                    result.explanation_prompt_version = provider.get("prompt_version")
+                    result.explanation_provider_run_id = provider.get("provider_run_id")
+                    result.explanation_usage = provider.get("usage", {})
+                    result.explanation_estimated_cost_minor = provider.get("estimated_cost_minor")
                 except AppError:
                     result.explanation_status = "failed"
                     self._degrade(run, "EXPLANATION_FAILED")
@@ -603,6 +673,46 @@ class ProductJobSearchService:
             reasons.append(reason)
             run.degraded_reasons = reasons
             self.db.commit()
+
+    def _job_matches_filters(self, job: ProductJob, filters: dict[str, Any]) -> bool:
+        if filters.get("verified_only", True):
+            if job.verified_at is None or (job.expires_at is not None and job.expires_at <= _utcnow()):
+                return False
+        if filters.get("locations") and not any(
+            value.lower() in (job.location_text or "").lower() for value in filters["locations"]
+        ):
+            return False
+        if filters.get("remote_modes") and job.remote_mode not in filters["remote_modes"]:
+            return False
+        if filters.get("employment_types") and job.employment_type not in filters["employment_types"]:
+            return False
+        expected_skills = set(self._normalize_skills(filters.get("skills") or []))
+        if expected_skills and not expected_skills.issubset(set(self._normalize_skills(job.skills or []))):
+            return False
+        currency = filters.get("salary_currency")
+        if currency and job.salary_currency != str(currency).upper():
+            return False
+        if filters.get("salary_period") and job.salary_period != filters["salary_period"]:
+            return False
+        lower = filters.get("salary_min_minor")
+        upper = filters.get("salary_max_minor")
+        job_upper = job.salary_max_minor if job.salary_max_minor is not None else job.salary_min_minor
+        job_lower = job.salary_min_minor if job.salary_min_minor is not None else job.salary_max_minor
+        if lower is not None and (job_upper is None or job_upper < int(lower)):
+            return False
+        if upper is not None and (job_lower is None or job_lower > int(upper)):
+            return False
+        return True
+
+    @staticmethod
+    def _minor_value(value: Any) -> int | None:
+        if value is None:
+            return None
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed >= 0 else None
 
     @staticmethod
     def _fingerprint(item: dict[str, Any]) -> str:

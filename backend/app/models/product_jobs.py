@@ -77,6 +77,21 @@ class ProductJob(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
 
 
+class JobCatalogMaintenanceRun(Base):
+    __tablename__ = "product_job_catalog_maintenance_runs"
+    __table_args__ = (Index("ix_product_job_maintenance_operation_created", "operation", "created_at"),)
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    operation = Column(String(80), nullable=False)
+    status = Column(String(24), nullable=False, default="running")
+    scanned_count = Column(Integer, nullable=False, default=0)
+    affected_count = Column(Integer, nullable=False, default=0)
+    error = Column(JSON, nullable=True)
+    started_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
 class JobSourceRecord(Base):
     __tablename__ = "product_job_source_records"
     __table_args__ = (
@@ -179,6 +194,11 @@ class JobSearchRun(Base):
     cv_version_id = Column(String(36), ForeignKey("product_cv_versions.id", ondelete="SET NULL"), nullable=True)
     candidate_profile_id = Column(String(36), ForeignKey("product_candidate_profiles.id", ondelete="SET NULL"), nullable=True)
     provider = Column(String(80), nullable=True)
+    provider_run_id = Column(String(255), nullable=True)
+    provider_model = Column(String(160), nullable=True)
+    provider_model_configuration_id = Column(String(36), nullable=True)
+    provider_usage = Column(JSON, nullable=True)
+    provider_estimated_cost_minor = Column(Integer, nullable=True)
     query_version = Column(String(40), nullable=False, default="job-query-v1")
     ranking_version = Column(String(40), nullable=False, default="job-rank-v1")
     idempotency_key = Column(String(255), nullable=True)
@@ -246,5 +266,12 @@ class JobSearchResult(Base):
     gaps = Column(JSON, nullable=False, default=list)
     explanation_status = Column(String(24), nullable=False, default="not_requested")
     explanation = Column(JSON, nullable=True)
+    explanation_provider = Column(String(80), nullable=True)
+    explanation_model = Column(String(160), nullable=True)
+    explanation_model_configuration_id = Column(String(36), nullable=True)
+    explanation_prompt_version = Column(String(80), nullable=True)
+    explanation_provider_run_id = Column(String(255), nullable=True)
+    explanation_usage = Column(JSON, nullable=True)
+    explanation_estimated_cost_minor = Column(Integer, nullable=True)
     result_snapshot = Column(JSON, nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
