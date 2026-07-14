@@ -308,3 +308,50 @@ def reconcile_product_credit_reservations_task() -> dict:
         return {"status": "completed", "reservations_reconciled": reconciled}
     finally:
         db.close()
+
+
+@celery_app.task(name="product.privacy.execute", acks_late=True)
+def execute_product_privacy_request_task(request_id: str) -> dict:
+    from app.models.product_privacy import PrivacyRequest
+    from app.services.product_privacy import ProductPrivacyService
+
+    db = SessionLocal()
+    try:
+        ProductPrivacyService(db).execute(request_id)
+        privacy_request = db.get(PrivacyRequest, request_id)
+        return {"status": privacy_request.status if privacy_request else "missing", "request_id": request_id}
+    except Exception as exc:
+        db.rollback()
+        privacy_request = db.get(PrivacyRequest, request_id)
+        if privacy_request is not None:
+            privacy_request.status = "failed"
+            privacy_request.error = {"code": "PRIVACY_REQUEST_FAILED", "message": str(exc)[:1000]}
+            privacy_request.lease_expires_at = None
+            db.commit()
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="product.privacy.publish_dispatches")
+def publish_product_privacy_dispatches_task() -> dict:
+    from app.services.product_privacy import ProductPrivacyService
+
+    db = SessionLocal()
+    try:
+        published = ProductPrivacyService(db).publish_pending_dispatches()
+        return {"status": "completed", "dispatches_published": published}
+    finally:
+        db.close()
+
+
+@celery_app.task(name="product.privacy.cleanup_artifacts")
+def cleanup_product_privacy_artifacts_task() -> dict:
+    from app.services.product_privacy import ProductPrivacyService
+
+    db = SessionLocal()
+    try:
+        deleted = ProductPrivacyService(db).cleanup_expired_artifacts()
+        return {"status": "completed", "artifacts_deleted": deleted}
+    finally:
+        db.close()

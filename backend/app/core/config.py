@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     r2_access_key_id: str | None = None
     r2_secret_access_key: str | None = None
     signed_url_ttl_seconds: int = 300
+    privacy_export_ttl_hours: int = 24
+    privacy_export_max_bytes: int = 200_000_000
+    privacy_export_encryption_key: str | None = None
 
     rate_limit_enabled: bool = True
     rate_limit_requests_per_minute: int = 120

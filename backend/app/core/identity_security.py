@@ -24,7 +24,7 @@ from backend.app.core.config import get_settings
 from backend.app.core.db import get_db
 from backend.app.core.errors import AppError
 from backend.app.models.db import AuthToken, User
-from backend.app.models.identity import AuthIdentity, UserSession
+from backend.app.models.identity import AuthIdentity, UserProductProfile, UserSession
 
 logger = logging.getLogger(__name__)
 bearer = HTTPBearer(auto_error=False)
@@ -273,10 +273,16 @@ def get_product_user(
     environment = str(getattr(settings, "app_env", "local")).lower()
     oidc_configured = bool(getattr(settings, "oidc_issuer", "") and getattr(settings, "oidc_audience", ""))
     if oidc_configured:
-        return _resolve_oidc_user(db, request, token, OidcVerifier().verify(token))
-    if environment in {"local", "development", "test"}:
-        return _resolve_local_token(db, token)
-    raise AppError(500, "AUTH_CONFIGURATION_INVALID", "OIDC must be configured outside local environments")
+        current = _resolve_oidc_user(db, request, token, OidcVerifier().verify(token))
+    elif environment in {"local", "development", "test"}:
+        current = _resolve_local_token(db, token)
+    else:
+        raise AppError(500, "AUTH_CONFIGURATION_INVALID", "OIDC must be configured outside local environments")
+    account_status = db.scalar(select(UserProductProfile.account_status).where(UserProductProfile.user_id == current.id))
+    privacy_status_path = request.url.path.startswith(str(settings.api_v1_prefix).rstrip("/") + "/privacy/requests/")
+    if account_status == "pending_deletion" and not privacy_status_path:
+        raise AppError(403, "ACCOUNT_PENDING_DELETION", "Account deletion is in progress")
+    return current
 
 
 def require_product_admin(current: ProductCurrentUser = Depends(get_product_user)) -> ProductCurrentUser:

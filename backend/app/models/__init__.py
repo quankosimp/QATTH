@@ -72,3 +72,11 @@ from backend.app.models.product_billing import (
     SignupTrialGrant,
     SignupTrialPolicy,
 )
+
+from backend.app.models.product_privacy import (
+    DeletionTombstone,
+    PrivacyArtifact,
+    PrivacyDispatch,
+    PrivacyEvent,
+    PrivacyRequest,
+)

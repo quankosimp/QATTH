@@ -7,6 +7,7 @@ from backend.app.api.v1.interviews import router as interviews_router
 from backend.app.api.v1.jobs import router as jobs_router
 from backend.app.api.v1.recommendations import router as recommendations_router
 from backend.app.api.v1.billing import router as billing_router
+from backend.app.api.v1.privacy import router as privacy_router
 
 router = APIRouter()
 router.include_router(identity_router)
@@ -16,3 +17,4 @@ router.include_router(interviews_router)
 router.include_router(jobs_router)
 router.include_router(recommendations_router)
 router.include_router(billing_router)
+router.include_router(privacy_router)
