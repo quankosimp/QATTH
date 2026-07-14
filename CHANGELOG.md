@@ -22,6 +22,7 @@ Tất cả thay đổi đáng chú ý của QATTH được ghi lại trong file 
 - Logical database schema cho CV, interview, jobs, recommendation, billing và operations.
 - Production runtime handoff và Architecture Decision Records.
 - Requirement traceability matrix và kịch bản k6 cho smoke/load/stress test.
+- Backend release-evidence record tách rõ local code validation khỏi provider, infrastructure, load, security và recovery acceptance.
 
 ### Changed
 

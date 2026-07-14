@@ -174,6 +174,7 @@ CV, transcript, đánh giá phỏng vấn và lịch sử ứng tuyển là dữ
 - [Pricing and Credits](docs/billing/pricing-and-credits.md)
 - [Production Runtime](docs/deployment/production.md)
 - [Load Testing](docs/operations/load-testing.md)
+- [Backend Release Evidence 2026-07-15](docs/operations/backend-release-evidence-2026-07-15.md)
 - [ADR 0001: PostgreSQL](docs/adr/0001-use-postgresql.md)
 - [ADR 0002: OpenAI API](docs/adr/0002-use-openai-api.md)
 - [ADR 0003: Provider-neutral Billing](docs/adr/0003-use-provider-neutral-billing-ledger.md)

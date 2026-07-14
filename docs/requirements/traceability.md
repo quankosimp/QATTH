@@ -2,7 +2,7 @@
 
 ## 1. Mục đích và quy ước
 
-Ma trận này nối requirement với API contract, logical entity và automated test. Mốc đánh giá: 2026-07-14.
+Ma trận này nối requirement với API contract, logical entity và automated test. Mốc đánh giá: 2026-07-15.
 
 - **Implemented:** backend path, migration/domain rule và automated contract test đã có.
 - **Partial:** backend boundary đã có nhưng provider, protocol hoặc một acceptance criterion chưa được kiểm chứng end-to-end.
@@ -65,3 +65,5 @@ Mỗi release candidate phải đính kèm hoặc liên kết:
 6. Security scan/threat review, restore rehearsal và unresolved risk có owner/expiry.
 
 Không chuyển requirement từ Partial/Evidence pending sang Implemented chỉ bằng sửa tài liệu; phải có evidence record có thể truy lại.
+
+Local backend validation gần nhất: [Backend Release Evidence 2026-07-15](../operations/backend-release-evidence-2026-07-15.md).
