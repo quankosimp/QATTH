@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from contextlib import suppress
+
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, WebSocket, WebSocketDisconnect, status
 from sqlalchemy.orm import Session
 
@@ -93,8 +95,9 @@ async def interview_realtime(
     except AppError as exc:
         with SessionLocal() as db:
             ProductInterviewService(db).mark_interrupted(interview_id)
-        await websocket.send_json({"type": "error", "payload": {"code": exc.code, "message": exc.message, "retryable": exc.retryable}})
-        await websocket.close(code=1011 if exc.retryable else 1008)
+        with suppress(RuntimeError, WebSocketDisconnect):
+            await websocket.send_json({"type": "error", "payload": {"code": exc.code, "message": exc.message, "retryable": exc.retryable}})
+            await websocket.close(code=1011 if exc.retryable else 1008)
 
 
 @router.post("/{interview_id}/end", response_model=APIResponse[InterviewView], status_code=status.HTTP_202_ACCEPTED)

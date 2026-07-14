@@ -7,6 +7,7 @@ Tất cả thay đổi đáng chú ý của QATTH được ghi lại trong file 
 ## [Unreleased]
 
 ### Added
+- Gemini Live realtime hardening với distributed session lease, reconnect/resumption, context compression, duration/idle limits và usage lineage.
 - Backend Product v1 cho identity/profile/consent, file/CV lifecycle, interview, job discovery, recommendation, billing, privacy, administration và operations.
 - Migration chain cho các domain Product v1 và các hardening revision về identity, interview, job search, billing dual-control và provider usage.
 - Provider resilience gồm timeout, retry jitter, circuit breaker, bulkhead, usage/cost ledger và budget guardrail.

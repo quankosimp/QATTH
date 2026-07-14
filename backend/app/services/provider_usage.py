@@ -64,20 +64,26 @@ class ProviderUsageService:
         resource_type: str,
         resource_id: str,
         error: Exception,
+        metadata: dict[str, Any] | None = None,
     ) -> ProviderUsageEvent:
+        metadata = metadata or {}
         details = error.details if isinstance(error, AppError) else {}
         execution = (details or {}).get("provider_execution", {})
         event = ProviderUsageEvent(
             user_id=user_id,
             provider=provider,
             purpose=purpose,
+            model=metadata.get("model"),
+            model_configuration_id=metadata.get("model_configuration_id"),
             correlation_id=str(execution.get("correlation_id") or get_contextvars().get("request_id") or uuid4()),
             resource_type=resource_type,
             resource_id=resource_id,
+            provider_run_id=metadata.get("provider_run_id"),
             status="failed",
-            attempts=int(execution.get("attempts") or 1),
-            latency_ms=execution.get("latency_ms"),
-            usage_json={},
+            attempts=int(metadata.get("attempts") or execution.get("attempts") or 1),
+            latency_ms=metadata.get("latency_ms", execution.get("latency_ms")),
+            usage_json=metadata.get("usage") or {},
+            estimated_cost_minor=metadata.get("estimated_cost_minor"),
             error_code=(error.code if isinstance(error, AppError) else type(error).__name__.upper())[:120],
         )
         self.db.add(event)

@@ -19,7 +19,7 @@ Ma trận này nối requirement với API contract, logical entity và automate
 | FR-FILE-001..003 | upload intent/complete/download; file_assets | <code>test_product_cv_contract.py</code> | Implemented; production R2/malware engine evidence pending |
 | FR-CV-001..009 | scans, attempts, drafts, versions, analysis, retry/archive; CV domain tables | <code>test_product_cv_contract.py</code> | Implemented |
 | FR-INT-001..002, FR-INT-004..008 | interview/session token/events/report/retry/feedback; interview tables/model_runs | <code>test_product_interview_contract.py</code> | Implemented |
-| FR-INT-003 | realtime WebSocket and Gemini Live adapter boundary | <code>test_product_interview_contract.py</code> covers lifecycle, not real audio | Partial: staging voice, reconnect and backpressure acceptance required |
+| FR-INT-003 | realtime WebSocket and Gemini Live adapter boundary | <code>test_product_interview_contract.py</code> and <code>test_gemini_interview_gateway.py</code> cover lifecycle, protocol, resumption and capacity; not real audio | Partial: staging voice, reconnect and backpressure acceptance required |
 | FR-JOB-001, FR-JOB-003..005, FR-JOB-010..012 | sources/postings/snapshots/interactions/applications/moderation | <code>test_product_job_search_contract.py</code>, <code>test_job_search.py</code> | Implemented |
 | FR-JOB-002 | live search run/provider usage/provenance | <code>test_product_job_search_contract.py</code> with provider fixture | Partial until allowed Internet sources and provider are verified in staging |
 | FR-JOB-006..009 | FTS/pgvector search, hard filters, rerank, explanations, run status/SSE | <code>test_product_job_search_contract.py</code>, <code>test_job_search.py</code> | Implemented; relevance/performance evidence tracked by NFR |
@@ -36,7 +36,7 @@ Ma trận này nối requirement với API contract, logical entity và automate
 |---|---|---|
 | NFR-AVL-001 | health endpoints and SLO definition | Evidence pending: rolling production availability |
 | NFR-AVL-002..004 | health/readiness, idempotent jobs, provider timeout/retry/circuit/bulkhead | Implemented; <code>test_contract.py</code>, <code>test_provider_resilience.py</code> |
-| NFR-AVL-005 | interview reconnect/state boundary | Partial: WebSocket/Gemini failure test required |
+| NFR-AVL-005 | interview reconnect/state boundary and distributed lease | Partial: gateway tests pass; staging WebSocket/Gemini disconnect test required |
 | NFR-PERF-001..008 | [Load Testing](../operations/load-testing.md) and k6 workload | Evidence pending: publish environment, dataset and percentile report |
 | NFR-DATA-001..004 | production handoff backup/restore contract | Evidence pending: managed backup and quarterly restore rehearsal |
 | NFR-DATA-005..006 | transactions/constraints, migration chain and reconciliation | Partial: migration from production-sized snapshot and provider reconciliation drill required |

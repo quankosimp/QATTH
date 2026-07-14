@@ -161,6 +161,11 @@ R2 credential phải được scope tối thiểu theo bucket/action. Frontend k
 | GEMINI_API_KEY | Yes | Gemini Live credential |
 | GEMINI_LIVE_MODEL | No | Realtime model alias |
 | GEMINI_LIVE_SESSION_LIMIT | No | Application concurrency cap |
+| GEMINI_LIVE_SETUP_TIMEOUT_SECONDS | No | Bounded provider handshake timeout |
+| GEMINI_LIVE_IDLE_TIMEOUT_SECONDS | No | Client heartbeat/input inactivity cutoff |
+| GEMINI_LIVE_RECONNECT_WINDOW_SECONDS | No | Window for issuing a resumable connection token |
+| GEMINI_LIVE_LEASE_SECONDS | No | Distributed session lease TTL; refreshed while connected |
+| GEMINI_LIVE_AUDIO_CHUNK_MAX_BYTES | No | Decoded PCM bytes accepted per client event |
 
 Model name không hard-code trong domain. Thay model/config đi qua versioned model configuration và evaluation.
 

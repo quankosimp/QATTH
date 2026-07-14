@@ -74,6 +74,11 @@ class Settings(BaseSettings):
     gemini_evaluation_model: str = "gemini-3.5-flash"
     gemini_live_model: str = "gemini-3.1-flash-live-preview"
     gemini_live_session_limit: int = 20
+    gemini_live_setup_timeout_seconds: int = 15
+    gemini_live_idle_timeout_seconds: int = 60
+    gemini_live_reconnect_window_seconds: int = 300
+    gemini_live_lease_seconds: int = 90
+    gemini_live_audio_chunk_max_bytes: int = 65_536
 
     payment_provider: str | None = None
     payment_api_key: str | None = None
@@ -117,6 +122,18 @@ class Settings(BaseSettings):
             raise ValueError("PROVIDER_RETRY_ATTEMPTS must be positive.")
         if self.provider_circuit_failure_threshold < 1 or self.provider_bulkhead_limit < 1:
             raise ValueError("Provider circuit and bulkhead limits must be positive.")
+        if self.gemini_live_session_limit < 1:
+            raise ValueError("GEMINI_LIVE_SESSION_LIMIT must be positive.")
+        if not 5 <= self.gemini_live_setup_timeout_seconds <= 60:
+            raise ValueError("GEMINI_LIVE_SETUP_TIMEOUT_SECONDS must be between 5 and 60.")
+        if not 15 <= self.gemini_live_idle_timeout_seconds <= 300:
+            raise ValueError("GEMINI_LIVE_IDLE_TIMEOUT_SECONDS must be between 15 and 300.")
+        if not 30 <= self.gemini_live_reconnect_window_seconds <= 7200:
+            raise ValueError("GEMINI_LIVE_RECONNECT_WINDOW_SECONDS must be between 30 and 7200.")
+        if self.gemini_live_lease_seconds < 30:
+            raise ValueError("GEMINI_LIVE_LEASE_SECONDS must be at least 30.")
+        if not 3200 <= self.gemini_live_audio_chunk_max_bytes <= 65_536:
+            raise ValueError("GEMINI_LIVE_AUDIO_CHUNK_MAX_BYTES must be between 3200 and 65536.")
         if self.openai_daily_budget_minor < 1 or self.openai_monthly_budget_minor < 1:
             raise ValueError("OpenAI provider budgets must be positive.")
 

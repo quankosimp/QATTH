@@ -181,6 +181,8 @@ class ProductInterviewService:
     ) -> RealtimeTokenView:
         IdentityService(self.db).require_consent(current.id)
         interview = self.get(current, interview_id)
+        if self._reconnect_expired(interview, _utcnow()):
+            raise AppError(409, "INTERVIEW_RECONNECT_EXPIRED", "Interview reconnect window has expired")
         if self._duration_reached(interview):
             raise AppError(409, "INTERVIEW_DURATION_REACHED", "Interview duration limit has been reached")
         if interview.status not in {"ready", "interrupted"}:
@@ -222,10 +224,14 @@ class ProductInterviewService:
         now = _utcnow()
         if token is None or token.expires_at <= now or token.consumed_at is not None or token.revoked_at is not None:
             raise AppError(401, "REALTIME_TOKEN_INVALID", "Realtime token is invalid or expired")
-        interview = self.db.get(ProductInterview, interview_id)
+        interview = self.db.scalar(
+            select(ProductInterview).where(ProductInterview.id == interview_id).with_for_update()
+        )
         if interview is None or interview.user_id != token.user_id or interview.status not in {"ready", "interrupted"}:
             raise AppError(409, "INTERVIEW_NOT_CONNECTABLE", "Interview cannot accept a realtime connection")
         IdentityService(self.db).require_consent(token.user_id)
+        if self._reconnect_expired(interview, now):
+            raise AppError(409, "INTERVIEW_RECONNECT_EXPIRED", "Interview reconnect window has expired")
         if self._duration_reached(interview):
             raise AppError(409, "INTERVIEW_DURATION_REACHED", "Interview duration limit has been reached")
         token.consumed_at = now
@@ -239,8 +245,12 @@ class ProductInterviewService:
     def mark_interrupted(self, interview_id: str) -> None:
         interview = self.db.get(ProductInterview, interview_id)
         if interview is not None and interview.status == "live":
+            from app.core.config import get_settings
+
             interview.status = "interrupted"
-            interview.reconnect_until = _utcnow() + timedelta(minutes=5)
+            interview.reconnect_until = _utcnow() + timedelta(
+                seconds=get_settings().gemini_live_reconnect_window_seconds
+            )
             self.db.commit()
 
     def update_resumption_handle(self, interview_id: str, handle: str | None) -> None:
@@ -314,6 +324,28 @@ class ProductInterviewService:
         interview = self.db.get(ProductInterview, interview_id)
         if interview is None:
             raise AppError(404, "INTERVIEW_NOT_FOUND", "Interview was not found")
+        candidate_events = self.db.scalar(
+            select(func.count())
+            .select_from(ProductInterviewEvent)
+            .where(
+                ProductInterviewEvent.interview_id == interview.id,
+                ProductInterviewEvent.speaker == "candidate",
+                ProductInterviewEvent.text.is_not(None),
+            )
+        )
+        if not candidate_events:
+            interview.status = "cancelled"
+            interview.ended_at = _utcnow()
+            interview.ended_reason = "candidate_ended_empty"
+            from app.services.product_billing import ProductBillingService
+
+            ProductBillingService(self.db).release(
+                interview.credit_reservation_id,
+                "interview_ended_empty",
+            )
+            self.db.commit()
+            self.db.refresh(interview)
+            return interview
         current = ProductCurrentUser(
             id=interview.user_id,
             email="",
@@ -323,6 +355,51 @@ class ProductInterviewService:
             session_id=None,
         )
         return self.end(current, interview_id, "realtime-end:" + interview_id, ended_reason="candidate_ended")
+
+    def timeout_realtime(self, interview_id: str) -> ProductInterview:
+        interview = self.db.scalar(
+            select(ProductInterview).where(ProductInterview.id == interview_id).with_for_update()
+        )
+        if interview is None:
+            raise AppError(404, "INTERVIEW_NOT_FOUND", "Interview was not found")
+        if interview.status not in {"live", "interrupted"}:
+            return interview
+        candidate_events = self.db.scalar(
+            select(func.count())
+            .select_from(ProductInterviewEvent)
+            .where(
+                ProductInterviewEvent.interview_id == interview.id,
+                ProductInterviewEvent.speaker == "candidate",
+                ProductInterviewEvent.text.is_not(None),
+            )
+        )
+        if candidate_events:
+            current = ProductCurrentUser(
+                id=interview.user_id,
+                email="",
+                role="student",
+                email_verified=True,
+                scopes=frozenset({"interview:system"}),
+                session_id=None,
+            )
+            return self.end(
+                current,
+                interview.id,
+                "timeout-end:" + interview.id,
+                ended_reason="duration_limit",
+            )
+        interview.status = "timed_out"
+        interview.ended_at = _utcnow()
+        interview.ended_reason = "duration_limit"
+        from app.services.product_billing import ProductBillingService
+
+        ProductBillingService(self.db).release(
+            interview.credit_reservation_id,
+            "interview_timed_out_empty",
+        )
+        self.db.commit()
+        self.db.refresh(interview)
+        return interview
 
     def end(
         self,
@@ -623,6 +700,13 @@ class ProductInterviewService:
         return bool(
             interview.started_at
             and interview.started_at + timedelta(minutes=interview.duration_minutes) <= _utcnow()
+        )
+
+    @staticmethod
+    def _reconnect_expired(interview: ProductInterview, now: datetime) -> bool:
+        return bool(
+            interview.status == "interrupted"
+            and (interview.reconnect_until is None or interview.reconnect_until <= now)
         )
 
     @staticmethod
