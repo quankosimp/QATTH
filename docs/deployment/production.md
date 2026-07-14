@@ -206,6 +206,7 @@ Domain values không chứa scheme/path/port. Thay allowlist cần product/legal
 
 | Variable | Secret | Purpose |
 |---|---:|---|
+| OTEL_ENABLED | No | Bắt buộc bật cho production backend |
 | OTEL_SERVICE_NAME | No | Service/process identity |
 | OTEL_EXPORTER_OTLP_ENDPOINT | No/Yes | Collector endpoint |
 | OTEL_EXPORTER_OTLP_HEADERS | Yes | Collector credential nếu cần |
@@ -356,7 +357,7 @@ Feature flag phù hợp cho live web search, model version, reranker và billing
 | Gemini Live realtime/reconnect/backpressure | Partial | Backend + deployment; staging voice and WebSocket load evidence |
 | Payment checkout, signed webhook, retention và reconciliation | Implemented, provider evidence pending | Backend + payment owner; Paddle sandbox certification/replay evidence |
 | R2, managed Redis/PostgreSQL integration | Environment pending | Deployment provisions; backend runs integration suite/config validation |
-| Logs/metrics/traces, dashboards và alerts | Instrumented, platform pending | Backend emits telemetry; deployment owns collector/dashboard/alerts |
+| Logs/metrics/traces, dashboards và alerts | Backend instrumented, platform pending | Backend emits safe OTLP spans/JSON logs/Prometheus metrics; deployment owns collector/dashboard/alerts |
 | Load, security, migration và restore acceptance | Evidence pending | Joint release gate; results linked from release record |
 
 `Implemented` ở bảng này chỉ xác nhận artifact backend; không thay thế hạ tầng, SLO hoặc provider acceptance do deployment team chịu trách nhiệm.

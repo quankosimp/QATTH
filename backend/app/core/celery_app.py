@@ -7,6 +7,7 @@ from celery import Celery, signals
 from structlog.contextvars import bind_contextvars, clear_contextvars, get_contextvars
 
 from app.core.config import get_settings
+from app.core.telemetry import instrument_celery
 
 settings = get_settings()
 
@@ -41,6 +42,8 @@ celery_app.conf.update(
         "cleanup-privacy-artifacts": {"task": "product.privacy.cleanup_artifacts", "schedule": 3600.0},
     },
 )
+
+instrument_celery()
 
 logger = structlog.get_logger(__name__)
 _UUID_PATTERN = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$")

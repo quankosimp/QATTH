@@ -19,6 +19,7 @@ from app.core.middleware import (
     DistributedRateLimitMiddleware,
     RequestContextMiddleware,
 )
+from app.core.telemetry import configure_telemetry, shutdown_telemetry
 
 
 @asynccontextmanager
@@ -36,6 +37,7 @@ async def lifespan(_: FastAPI):
         from app.core.db import engine
 
         engine.dispose()
+        shutdown_telemetry()
 
 
 def create_app() -> FastAPI:
@@ -84,6 +86,8 @@ def create_app() -> FastAPI:
             should_group_status_codes=False,
             should_ignore_untemplated=True,
         ).instrument(app).expose(app, include_in_schema=False)
+
+    configure_telemetry(app=app, service_role="api")
 
     return app
 

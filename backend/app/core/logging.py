@@ -15,6 +15,15 @@ def configure_logging() -> None:
         event_dict.setdefault("environment", settings.app_env)
         if "level" in event_dict:
             event_dict.setdefault("severity", str(event_dict["level"]).upper())
+        try:
+            from opentelemetry import trace
+
+            span_context = trace.get_current_span().get_span_context()
+            if span_context.is_valid:
+                event_dict.setdefault("trace_id", format(span_context.trace_id, "032x"))
+                event_dict.setdefault("span_id", format(span_context.span_id, "016x"))
+        except ImportError:
+            pass
         return event_dict
 
     logging.basicConfig(

@@ -165,5 +165,5 @@ Export tạo snapshot, đóng gói artifact, signed URL TTL và tự xóa theo r
 - Readiness: DB và runtime migration compatible; dependency bắt buộc khỏe.
 - Startup: validate config, initialize telemetry, không tự chạy schema mutation.
 - Shutdown: ngừng nhận traffic, drain request, close realtime có kiểm soát, worker hoàn tất/return job.
-- Metrics/log/trace theo NFR.
+- Metrics/log/trace theo NFR: FastAPI, SQLAlchemy và Celery phát W3C-context spans qua OTLP; provider adapter tạo span an toàn không chứa CV, transcript, email, credential hoặc full query.
 - Admin retry/adjustment luôn có actor, reason và audit.

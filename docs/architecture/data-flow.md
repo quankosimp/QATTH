@@ -237,9 +237,9 @@ Deletion phải liệt kê exception retention, retry object deletion và không
 ## 7. Observability flow
 
 - Edge nhận hoặc tạo request ID và API chuẩn hóa.
-- API tạo trace span, gắn user ID dạng internal/pseudonymous.
+- API tạo trace span, redacts query và không gắn CV/transcript/email/token; request ID được giữ riêng để điều tra.
 - Outbox chứa correlation context tối thiểu.
-- Worker tiếp tục trace hoặc link trace.
+- Celery tự inject/extract W3C trace context; worker tiếp tục trace và vẫn giữ request ID trong durable run/outbox.
 - Provider request ID/model usage lưu trong model run.
 - Structured log chỉ ghi identifier và error code an toàn.
 - Metric label không dùng user ID, job ID hoặc URL làm high-cardinality dimension.

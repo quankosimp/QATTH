@@ -11,6 +11,8 @@ from uuid import uuid4
 
 import redis
 import structlog
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
 from structlog.contextvars import get_contextvars
 
 from app.core.config import get_settings
@@ -102,6 +104,25 @@ class ProviderExecutor:
         self._local_cost: dict[str, int] = {}
 
     def execute(self, provider: str, purpose: str, operation: Callable[[], T]) -> ProviderExecution[T]:
+        tracer = trace.get_tracer(__name__)
+        with tracer.start_as_current_span(
+            "provider.call",
+            attributes={"qatth.provider": provider, "qatth.provider.purpose": purpose},
+            record_exception=False,
+            set_status_on_exception=False,
+        ) as span:
+            try:
+                execution = self._execute(provider, purpose, operation)
+            except Exception as exc:
+                error_code = exc.code if isinstance(exc, AppError) else type(exc).__name__.upper()[:120]
+                span.set_attribute("error.type", error_code)
+                span.set_status(Status(StatusCode.ERROR))
+                raise
+            span.set_attribute("qatth.provider.attempts", execution.attempts)
+            span.set_attribute("qatth.provider.latency_ms", execution.latency_ms)
+            return execution
+
+    def _execute(self, provider: str, purpose: str, operation: Callable[[], T]) -> ProviderExecution[T]:
         correlation_id = str(get_contextvars().get("request_id") or uuid4())
         key = provider + ":" + purpose
         self._ensure_budget(provider)

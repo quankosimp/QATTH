@@ -111,6 +111,7 @@ class Settings(BaseSettings):
     otel_enabled: bool = False
     otel_service_name: str = "qatth-api"
     otel_exporter_otlp_endpoint: str | None = None
+    trace_sample_ratio: float = 0.1
     prometheus_enabled: bool = True
 
     upload_dir: Path = Path("data/uploads")
@@ -160,6 +161,14 @@ class Settings(BaseSettings):
             raise ValueError("GEMINI_LIVE_AUDIO_CHUNK_MAX_BYTES must be between 3200 and 65536.")
         if self.openai_daily_budget_minor < 1 or self.openai_monthly_budget_minor < 1:
             raise ValueError("OpenAI provider budgets must be positive.")
+        if not 0.0 <= self.trace_sample_ratio <= 1.0:
+            raise ValueError("TRACE_SAMPLE_RATIO must be between 0 and 1.")
+        if not self.otel_service_name.strip():
+            raise ValueError("OTEL_SERVICE_NAME must not be empty.")
+        if self.otel_enabled:
+            telemetry_endpoint = urlsplit(self.otel_exporter_otlp_endpoint or "")
+            if telemetry_endpoint.scheme not in {"http", "https"} or not telemetry_endpoint.hostname:
+                raise ValueError("OTEL_EXPORTER_OTLP_ENDPOINT must be an HTTP(S) URL when telemetry is enabled.")
         if not 1 <= self.payment_webhook_tolerance_seconds <= 300:
             raise ValueError("PAYMENT_WEBHOOK_TOLERANCE_SECONDS must be between 1 and 300.")
         if self.payment_http_timeout_seconds <= 0:
@@ -194,6 +203,10 @@ class Settings(BaseSettings):
             errors.append("Celery Redis URLs must use TLS (rediss://) in production")
         if not self.trusted_proxy_cidrs:
             errors.append("TRUSTED_PROXY_CIDRS is required in production")
+        if not self.otel_enabled:
+            errors.append("OTEL_ENABLED must be true in production")
+        if not self.otel_exporter_otlp_endpoint:
+            errors.append("OTEL_EXPORTER_OTLP_ENDPOINT is required in production")
         if self.storage_backend != "r2":
             errors.append("STORAGE_BACKEND must be r2 in production")
         for name, value in (

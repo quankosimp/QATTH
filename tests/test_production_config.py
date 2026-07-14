@@ -19,6 +19,8 @@ def test_production_config_fails_fast_for_required_security_dependencies() -> No
         "PAYMENT_PADDLE_PRICE_IDS",
         "PAYMENT_SUCCESS_URL_ALLOWLIST",
         "TRUSTED_PROXY_CIDRS",
+        "OTEL_ENABLED",
+        "OTEL_EXPORTER_OTLP_ENDPOINT",
     ):
         assert required in message
 
@@ -52,6 +54,8 @@ def test_complete_production_config_passes_startup_contract() -> None:
         payment_success_url_allowlist=["https://app.qatth.example/billing"],
         payment_paddle_price_ids={"TOPUP_STARTER": "pri_01configured"},
         job_search_allowed_domains=["linkedin.com"],
+        otel_enabled=True,
+        otel_exporter_otlp_endpoint="https://otel.example",
     )
     assert settings.app_env == "production"
     assert settings.payment_provider == "paddle"
