@@ -13,6 +13,7 @@ from sqlalchemy import Text, cast, func, literal, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.errors import AppError
 from app.core.identity_security import ProductCurrentUser
 from app.models.identity import UserProductProfile
@@ -552,6 +553,7 @@ class ProductJobSearchService:
         return {"job": job, "lexical": lexical, "vector": vector, "freshness": freshness, "source": source_score, "rerank": rerank, "final": final, "reasons": reasons, "gaps": gaps}
 
     def _verify_and_upsert(self, item: dict[str, Any], provider: dict[str, Any]) -> ProductJob:
+        self._assert_source_domain_allowed(item["source_url"])
         page = SafeJobFetcher().fetch(
             item["source_url"],
             expected_title=item.get("title"),
@@ -559,7 +561,10 @@ class ProductJobSearchService:
         )
         parsed = urlparse(page.final_url)
         domain = parsed.hostname.lower() if parsed.hostname else "unknown"
+        self._assert_source_domain_allowed(page.final_url)
         source = self.db.scalar(select(JobSource).where(JobSource.base_domain == domain))
+        if source is not None and source.status == "disabled":
+            raise AppError(422, "JOB_SOURCE_DISABLED", "Job source is disabled by policy")
         if source is None:
             source = JobSource(key="web-" + hashlib.sha256(domain.encode()).hexdigest()[:16], display_name=domain, source_type="web_search", base_domain=domain, access_policy={"discovery": "openai_citation", "fetch": "public_only"}, quality_score=0.5)
             self.db.add(source)
@@ -645,6 +650,32 @@ class ProductJobSearchService:
             )
         self._ensure_embedding(job, snapshot)
         return job
+
+    @staticmethod
+    def _domain_matches(domain: str, policies: list[str]) -> bool:
+        normalized = domain.casefold().rstrip(".")
+        return any(
+            normalized == policy.casefold().rstrip(".")
+            or normalized.endswith("." + policy.casefold().rstrip("."))
+            for policy in policies
+        )
+
+    @classmethod
+    def _source_domain_allowed(cls, domain: str, allowed: list[str], blocked: list[str]) -> bool:
+        if cls._domain_matches(domain, blocked):
+            return False
+        return not allowed or cls._domain_matches(domain, allowed)
+
+    def _assert_source_domain_allowed(self, source_url: str) -> str:
+        domain = (urlparse(source_url).hostname or "").casefold().rstrip(".")
+        settings = get_settings()
+        if not domain or not self._source_domain_allowed(
+            domain,
+            settings.job_search_allowed_domains,
+            settings.job_search_blocked_domains,
+        ):
+            raise AppError(422, "JOB_SOURCE_NOT_ALLOWED", "Job source is not allowed by policy")
+        return domain
 
     def _ensure_embedding(self, job: ProductJob, snapshot: JobSnapshot) -> None:
         existing = self.db.scalar(select(JobEmbedding).where(JobEmbedding.job_snapshot_id == snapshot.id, JobEmbedding.model == OpenAIJobsAdapter().embedding_model))

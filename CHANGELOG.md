@@ -25,6 +25,7 @@ Tất cả thay đổi đáng chú ý của QATTH được ghi lại trong file 
 
 ### Changed
 
+- Job ingest now rechecks allow/block policy before fetch and after redirects, and rejects admin-disabled sources before persistence.
 - Distributed rate limiting now uses atomic Redis Lua buckets for trusted client IP, principal and normalized action, with lower AI-cost quotas and production fail-closed behavior.
 - Production startup now fails fast when malware scanning, privacy encryption or Paddle configuration is missing or insecure.
 - Interview credits are reserved at realtime token issuance and captured only after the first successful Gemini output delivery; timeout reconciliation now follows CV/interview outcomes.
