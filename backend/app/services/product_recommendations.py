@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import AppError
 from app.core.idempotency import IdempotencyService
 from app.core.identity_security import ProductCurrentUser
-from app.models.identity import UserProductProfile
+from app.models.identity import UserConsent, UserProductProfile
 from app.models.product_cv import ProductCV, ProductCvVersion
 from app.models.product_interview import ProductInterview, ProductInterviewReport
 from app.models.product_jobs import CandidateProfile, JobSearchResult, JobSearchRun, ProductJob
@@ -21,11 +21,13 @@ from app.models.product_recommendations import (
     JobInteraction,
     JobModerationCase,
     RecommendationDispatch,
+    RecommendationFeedback,
     RecommendationMatch,
     RecommendationRun,
 )
 from app.schemas.product_recommendations import (
     CreateJobApplicationRequest,
+    CreateRecommendationFeedbackRequest,
     CreateRecommendationRunRequest,
     JobApplicationEventView,
     JobApplicationPage,
@@ -33,6 +35,7 @@ from app.schemas.product_recommendations import (
     JobInteractionView,
     RecommendationMatchPage,
     RecommendationMatchView,
+    RecommendationFeedbackView,
     RecommendationRunView,
     UpdateJobApplicationRequest,
     UpsertJobInteractionRequest,
@@ -136,6 +139,91 @@ class ProductRecommendationService:
         self.db.commit()
         self.db.refresh(interaction)
         return interaction
+
+    def create_feedback(
+        self,
+        current: ProductCurrentUser,
+        run_id: str,
+        payload: CreateRecommendationFeedbackRequest,
+        idempotency_key: str,
+    ) -> RecommendationFeedback:
+        IdentityService(self.db).require_consent(current.id)
+        request_hash = _request_hash(payload)
+        existing = self.db.scalar(
+            select(RecommendationFeedback).where(
+                RecommendationFeedback.user_id == current.id,
+                RecommendationFeedback.idempotency_key == idempotency_key,
+            )
+        )
+        if existing is not None:
+            if existing.request_hash != request_hash:
+                raise AppError(409, "IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used with a different request")
+            return existing
+        run = self.get_run(current, run_id)
+        if run.status != "completed":
+            raise AppError(409, "RECOMMENDATION_NOT_COMPLETED", "Feedback requires a completed recommendation run")
+        match = self.db.scalar(
+            select(RecommendationMatch).where(
+                RecommendationMatch.run_id == run.id,
+                RecommendationMatch.job_id == payload.job_id,
+            )
+        )
+        if match is None:
+            raise AppError(404, "RECOMMENDATION_MATCH_NOT_FOUND", "Job was not part of this recommendation run")
+        training_consent = self.db.scalar(
+            select(UserConsent)
+            .where(UserConsent.user_id == current.id, UserConsent.purpose == "model_training")
+            .order_by(UserConsent.updated_at.desc())
+        )
+        training_eligible = bool(training_consent is not None and training_consent.status == "granted")
+        feedback = RecommendationFeedback(
+            user_id=current.id,
+            run_id=run.id,
+            match_id=match.id,
+            job_id=match.job_id,
+            event_type=payload.event_type,
+            reason_code=payload.reason_code,
+            note=payload.note,
+            ranking_version=run.ranking_version,
+            experiment_assignment=run.experiment_assignment,
+            context_snapshot={
+                "rank": match.rank,
+                "score": match.score,
+                "score_breakdown": match.score_breakdown,
+                "candidate_profile_version": run.candidate_profile_version,
+                "search_run_id": run.search_run_id,
+            },
+            training_eligible=training_eligible,
+            training_consent_snapshot={
+                "consent_id": training_consent.id if training_consent else None,
+                "policy_version": training_consent.policy_version if training_consent else None,
+                "status": training_consent.status if training_consent else "not_granted",
+                "updated_at": training_consent.updated_at.isoformat() if training_consent else None,
+            },
+            idempotency_key=idempotency_key,
+            request_hash=request_hash,
+        )
+        self.db.add(feedback)
+        self.db.commit()
+        self.db.refresh(feedback)
+        return feedback
+
+    @staticmethod
+    def feedback_view(feedback: RecommendationFeedback) -> RecommendationFeedbackView:
+        return RecommendationFeedbackView(
+            id=feedback.id,
+            run_id=feedback.run_id,
+            job_id=feedback.job_id,
+            event_type=feedback.event_type,
+            reason_code=feedback.reason_code,
+            note=feedback.note,
+            taxonomy_version=feedback.taxonomy_version,
+            ranking_version=feedback.ranking_version,
+            rank=int(feedback.context_snapshot["rank"]),
+            experiment_assignment=feedback.experiment_assignment,
+            training_eligible=feedback.training_eligible,
+            created_at=feedback.created_at,
+        )
 
     @staticmethod
     def interaction_view(interaction: JobInteraction) -> JobInteractionView:

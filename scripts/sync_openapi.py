@@ -17,11 +17,7 @@ from app.main import app  # noqa: E402
 
 
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "options", "head"}
-PARTIAL_OPERATIONS = {
-    ("/v1/billing/checkout-sessions", "post"),
-    ("/v1/billing/portal-sessions", "post"),
-    ("/v1/webhooks/payments/{provider}", "post"),
-}
+PARTIAL_OPERATIONS = set()
 NEW_OPERATION_METADATA = {
     ("/v1/admin/credit-adjustments/{adjustment_id}", "get"): ("getCreditAdjustment", ["FR-ADMIN-005", "FR-BILL-004"], ["admin:billing:read"]),
     ("/v1/admin/credit-adjustments/{adjustment_id}/approve", "post"): ("approveCreditAdjustment", ["FR-ADMIN-005", "FR-BILL-004"], ["admin:billing:approve"]),
@@ -44,6 +40,7 @@ NEW_OPERATION_METADATA = {
     ("/v1/me/sessions/{session_id}", "delete"): ("revokeSession", ["FR-AUTH-003"], []),
     ("/v1/ops/diagnostics", "get"): ("getOpsDiagnostics", ["FR-OPS-001", "NFR-AVL-002"], ["ops:jobs:read"]),
     ("/v1/ops/provider-usage", "get"): ("getProviderUsage", ["FR-OPS-002", "NFR-OBS-002", "NFR-AI-005"], ["ops:jobs:read"]),
+    ("/v1/recommendation-runs/{run_id}/feedback", "post"): ("createRecommendationFeedback", ["FR-REC-004", "NFR-AI-007"], []),
 }
 PRESERVED_OPERATION_FIELDS = (
     "summary",

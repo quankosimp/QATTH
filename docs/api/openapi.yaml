@@ -1838,7 +1838,7 @@ paths:
       - FR-BILL-002
       - FR-BILL-003
       - FR-BILL-007
-      x-implementation-status: partial
+      x-implementation-status: implemented
   /v1/billing/portal-sessions:
     post:
       tags:
@@ -1873,7 +1873,7 @@ paths:
           $ref: '#/components/responses/Error'
       x-requirement-ids:
       - FR-BILL-002
-      x-implementation-status: partial
+      x-implementation-status: implemented
   /v1/webhooks/payments/{provider}:
     parameters:
     - name: provider
@@ -1902,6 +1902,14 @@ paths:
           - type: string
           - type: 'null'
           title: X-Payment-Signature
+      - name: Paddle-Signature
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Paddle-Signature
       responses:
         '202':
           description: Successful Response
@@ -1923,7 +1931,7 @@ paths:
       - FR-BILL-008
       - FR-BILL-009
       - FR-BILL-011
-      x-implementation-status: partial
+      x-implementation-status: implemented
   /v1/privacy/exports:
     post:
       tags:
@@ -3409,6 +3417,52 @@ paths:
       - NFR-AI-005
       x-required-scopes:
       - ops:jobs:read
+      x-implementation-status: implemented
+  /v1/recommendation-runs/{run_id}/feedback:
+    post:
+      tags:
+      - Recommendations
+      summary: Create Recommendation Feedback
+      operationId: createRecommendationFeedback
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Run Id
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+          title: Idempotency-Key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRecommendationFeedbackRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse_RecommendationFeedbackView_'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      x-requirement-ids:
+      - FR-REC-004
+      - NFR-AI-007
       x-implementation-status: implemented
 components:
   securitySchemes:
@@ -9601,3 +9655,124 @@ components:
       - msg
       - type
       title: ValidationError
+    APIResponse_RecommendationFeedbackView_:
+      properties:
+        data:
+          anyOf:
+          - $ref: '#/components/schemas/RecommendationFeedbackView'
+          - type: 'null'
+        error:
+          anyOf:
+          - $ref: '#/components/schemas/ErrorDetail'
+          - type: 'null'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      type: object
+      required:
+      - data
+      - meta
+      title: APIResponse[RecommendationFeedbackView]
+    CreateRecommendationFeedbackRequest:
+      properties:
+        job_id:
+          type: string
+          title: Job Id
+        event_type:
+          type: string
+          enum:
+          - impression
+          - opened
+          - saved
+          - dismissed
+          - applied
+          - not_relevant
+          - explanation_helpful
+          - explanation_unhelpful
+          title: Event Type
+        reason_code:
+          anyOf:
+          - type: string
+            maxLength: 80
+          - type: 'null'
+          title: Reason Code
+        note:
+          anyOf:
+          - type: string
+            maxLength: 2000
+          - type: 'null'
+          title: Note
+      additionalProperties: false
+      type: object
+      required:
+      - job_id
+      - event_type
+      title: CreateRecommendationFeedbackRequest
+    RecommendationFeedbackView:
+      properties:
+        id:
+          type: string
+          title: Id
+        run_id:
+          type: string
+          title: Run Id
+        job_id:
+          type: string
+          title: Job Id
+        event_type:
+          type: string
+          enum:
+          - impression
+          - opened
+          - saved
+          - dismissed
+          - applied
+          - not_relevant
+          - explanation_helpful
+          - explanation_unhelpful
+          title: Event Type
+        reason_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Reason Code
+        note:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Note
+        taxonomy_version:
+          type: string
+          title: Taxonomy Version
+        ranking_version:
+          type: string
+          title: Ranking Version
+        rank:
+          type: integer
+          title: Rank
+        experiment_assignment:
+          additionalProperties:
+            type: string
+          type: object
+          title: Experiment Assignment
+        training_eligible:
+          type: boolean
+          title: Training Eligible
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - run_id
+      - job_id
+      - event_type
+      - reason_code
+      - note
+      - taxonomy_version
+      - ranking_version
+      - rank
+      - experiment_assignment
+      - training_eligible
+      - created_at
+      title: RecommendationFeedbackView

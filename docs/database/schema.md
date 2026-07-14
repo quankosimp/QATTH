@@ -270,13 +270,17 @@ Application: user/job, current status, source URL, note, applied_at, timestamps.
 
 Versioned derived profile: <code>id</code>, user ID, version, CV version ID, preference version/snapshot, interview evaluation IDs, structured profile JSONB, embedding vector(n) nullable, model/version, status fresh/stale, created_at.
 
-### match_runs
+### recommendation_runs
 
 <code>id</code>, user ID, candidate profile ID, source search run ID nullable, ranking version, config snapshot, status, idempotency key, timestamps.
 
-### match_items
+### recommendation_matches
 
 <code>id</code>, match run ID, job ID/snapshot ID, rank, score components JSONB, final score, explanation JSONB, model run ID nullable. Unique run/job và run/rank.
+
+### recommendation_feedback
+
+Append-only evaluation event: <code>id</code>, user ID, recommendation run/match/job IDs, event taxonomy, reason/note, ranking version, server-side experiment assignment, rank/score context snapshot, training eligibility và consent snapshot, idempotency key, created_at. Unique <code>(user_id, idempotency_key)</code>. Client không được gửi authoritative experiment, rank, score hoặc training eligibility.
 
 ## 10. Billing domain
 

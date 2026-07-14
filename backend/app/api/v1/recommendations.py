@@ -6,11 +6,13 @@ from app.core.identity_security import ProductCurrentUser, get_product_user
 from app.schemas.common import APIResponse, make_response
 from app.schemas.product_recommendations import (
     CreateJobApplicationRequest,
+    CreateRecommendationFeedbackRequest,
     CreateRecommendationRunRequest,
     JobApplicationPage,
     JobApplicationView,
     JobInteractionView,
     RecommendationMatchPage,
+    RecommendationFeedbackView,
     RecommendationRunView,
     UpdateJobApplicationRequest,
     UpsertJobInteractionRequest,
@@ -31,6 +33,24 @@ def upsert_job_interaction(
 ):
     service = ProductRecommendationService(db)
     return make_response(service.interaction_view(service.upsert_interaction(current, job_id, payload, idempotency_key)), request=request)
+
+
+@router.post(
+    "/recommendation-runs/{run_id}/feedback",
+    response_model=APIResponse[RecommendationFeedbackView],
+    status_code=status.HTTP_201_CREATED,
+)
+def create_recommendation_feedback(
+    run_id: str,
+    payload: CreateRecommendationFeedbackRequest,
+    request: Request,
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
+    current: ProductCurrentUser = Depends(get_product_user),
+    db: Session = Depends(get_db),
+):
+    service = ProductRecommendationService(db)
+    feedback = service.create_feedback(current, run_id, payload, idempotency_key)
+    return make_response(service.feedback_view(feedback), request=request)
 
 
 @router.get("/job-applications", response_model=APIResponse[JobApplicationPage])

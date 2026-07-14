@@ -7,6 +7,7 @@ Tất cả thay đổi đáng chú ý của QATTH được ghi lại trong file 
 ## [Unreleased]
 
 ### Added
+- Append-only recommendation feedback events with server-derived run, rank, score, experiment and training-consent attribution.
 - Scheduled Paddle checkout/subscription reconciliation, stuck inbox recovery and payment payload retention enforcement.
 - Paddle production billing adapter với checkout, customer portal, replay-safe webhook normalization và server-side offer mapping.
 - Live job discovery hardening với full OpenAI source provenance, local schema validation, domain policy và active-page verification.

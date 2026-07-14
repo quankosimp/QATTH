@@ -10,6 +10,16 @@ from app.schemas.product_jobs import JobView
 
 InteractionType = Literal["viewed", "saved", "dismissed", "reported"]
 ApplicationStatus = Literal["planned", "applied", "screening", "interviewing", "offered", "accepted", "rejected", "withdrawn"]
+RecommendationFeedbackType = Literal[
+    "impression",
+    "opened",
+    "saved",
+    "dismissed",
+    "applied",
+    "not_relevant",
+    "explanation_helpful",
+    "explanation_unhelpful",
+]
 
 
 class UpsertJobInteractionRequest(BaseModel):
@@ -30,6 +40,30 @@ class JobInteractionView(BaseModel):
     taxonomy_version: str
     created_at: datetime
     updated_at: datetime
+
+
+class CreateRecommendationFeedbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    job_id: str
+    event_type: RecommendationFeedbackType
+    reason_code: str | None = Field(default=None, max_length=80)
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class RecommendationFeedbackView(BaseModel):
+    id: str
+    run_id: str
+    job_id: str
+    event_type: RecommendationFeedbackType
+    reason_code: str | None
+    note: str | None
+    taxonomy_version: str
+    ranking_version: str
+    rank: int
+    experiment_assignment: dict[str, str]
+    training_eligible: bool
+    created_at: datetime
 
 
 class CreateJobApplicationRequest(BaseModel):

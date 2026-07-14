@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
 
 from app.models.db import Base
 
@@ -158,4 +158,31 @@ class RecommendationMatch(Base):
     gaps = Column(JSON, nullable=False, default=list)
     evidence = Column(JSON, nullable=False)
     result_snapshot = Column(JSON, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
+class RecommendationFeedback(Base):
+    __tablename__ = "product_recommendation_feedback"
+    __table_args__ = (
+        UniqueConstraint("user_id", "idempotency_key", name="uq_product_recommendation_feedback_idempotency"),
+        Index("ix_product_recommendation_feedback_run_event", "run_id", "event_type", "created_at"),
+        Index("ix_product_recommendation_feedback_user_created", "user_id", "created_at"),
+    )
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    run_id = Column(String(36), ForeignKey("product_recommendation_runs.id", ondelete="CASCADE"), nullable=False)
+    match_id = Column(String(36), ForeignKey("product_recommendation_matches.id", ondelete="CASCADE"), nullable=False)
+    job_id = Column(String(36), ForeignKey("product_jobs.id", ondelete="RESTRICT"), nullable=False)
+    event_type = Column(String(40), nullable=False)
+    reason_code = Column(String(80), nullable=True)
+    note = Column(Text, nullable=True)
+    taxonomy_version = Column(String(40), nullable=False, default="recommendation-feedback-v1")
+    ranking_version = Column(String(40), nullable=False)
+    experiment_assignment = Column(JSON, nullable=False)
+    context_snapshot = Column(JSON, nullable=False)
+    training_eligible = Column(Boolean, nullable=False, default=False)
+    training_consent_snapshot = Column(JSON, nullable=False)
+    idempotency_key = Column(String(255), nullable=False)
+    request_hash = Column(String(64), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
