@@ -303,6 +303,9 @@ class ProductCvService:
         scan.status = "confirmed"
         scan.completed_at = _utcnow()
         draft.confirmed_at = _utcnow()
+        from app.services.candidate_profiles import invalidate_candidate_profiles
+
+        invalidate_candidate_profiles(self.db, current.id)
         idempotency.complete(result.record, resource_type="cv_version", resource_id=version.id, response_status=201)
         self.db.commit()
         self.db.refresh(version)
@@ -349,6 +352,9 @@ class ProductCvService:
             raise AppError(404, "CV_VERSION_NOT_FOUND", "CV version was not found")
         cv.active_version_id = version.id
         cv.updated_at = _utcnow()
+        from app.services.candidate_profiles import invalidate_candidate_profiles
+
+        invalidate_candidate_profiles(self.db, current.id)
         idempotency.complete(result.record, resource_type="cv_version", resource_id=version.id, response_status=200)
         self.db.commit()
         return version
@@ -368,6 +374,9 @@ class ProductCvService:
         cv.status = "archived"
         cv.active_version_id = None
         cv.updated_at = _utcnow()
+        from app.services.candidate_profiles import invalidate_candidate_profiles
+
+        invalidate_candidate_profiles(self.db, current.id)
         idempotency.complete(result.record, resource_type="cv", resource_id=cv.id, response_status=200)
         self.db.commit()
         self.db.refresh(cv)

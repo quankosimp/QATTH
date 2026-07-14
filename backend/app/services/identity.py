@@ -38,6 +38,9 @@ class IdentityService:
         if preferences is not None:
             profile.job_preferences = preferences
             profile.preference_version += 1
+            from app.services.candidate_profiles import invalidate_candidate_profiles
+
+            invalidate_candidate_profiles(self.db, user_id)
         profile.updated_at = _utcnow()
         self.db.commit()
         self.db.refresh(profile)

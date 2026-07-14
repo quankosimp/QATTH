@@ -467,7 +467,12 @@ class ProductRecommendationService:
             version = self.db.scalar(
                 select(ProductCvVersion)
                 .join(ProductCV, ProductCV.id == ProductCvVersion.cv_id)
-                .where(ProductCvVersion.id == cv_version_id, ProductCvVersion.user_id == current.id, ProductCV.status == "active")
+                .where(
+                    ProductCvVersion.id == cv_version_id,
+                    ProductCvVersion.user_id == current.id,
+                    ProductCV.status == "active",
+                    ProductCV.active_version_id == ProductCvVersion.id,
+                )
             )
             if version is None:
                 raise AppError(404, "CV_VERSION_NOT_FOUND", "CV version was not found")
@@ -475,8 +480,12 @@ class ProductRecommendationService:
             version = self.db.scalar(
                 select(ProductCvVersion)
                 .join(ProductCV, ProductCV.id == ProductCvVersion.cv_id)
-                .where(ProductCvVersion.user_id == current.id, ProductCV.status == "active")
-                .order_by(ProductCvVersion.created_at.desc())
+                .where(
+                    ProductCvVersion.user_id == current.id,
+                    ProductCV.status == "active",
+                    ProductCV.active_version_id == ProductCvVersion.id,
+                )
+                .order_by(ProductCV.updated_at.desc(), ProductCvVersion.created_at.desc())
             )
             if version is None:
                 raise AppError(409, "CANDIDATE_PROFILE_INPUT_REQUIRED", "A confirmed CV version is required")
@@ -502,6 +511,7 @@ class ProductRecommendationService:
                 CandidateProfile.cv_version_id == version.id,
                 CandidateProfile.preference_version == preference_version,
                 CandidateProfile.interview_report_ids == report_ids,
+                CandidateProfile.generation_version == "candidate-v2",
                 CandidateProfile.status == "fresh",
             )
             .order_by(CandidateProfile.version.desc())

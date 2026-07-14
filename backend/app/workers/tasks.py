@@ -223,6 +223,9 @@ def evaluate_product_interview_task(report_id: str) -> dict:
         report.completed_at = datetime.now(UTC)
         interview.status = "completed"
         interview.ended_at = interview.ended_at or datetime.now(UTC)
+        from app.services.candidate_profiles import invalidate_candidate_profiles
+
+        invalidate_candidate_profiles(db, report.user_id)
         db.commit()
         return {"status": "ready", "report_id": report_id}
     except Exception as exc:
