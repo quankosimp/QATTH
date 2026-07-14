@@ -47,7 +47,7 @@ Ma trận này nối requirement với API contract, logical entity và automate
 | NFR-PRIV-005 | retention workflow | Partial: scheduler and backup expiration evidence required |
 | NFR-OBS-001..003, NFR-OBS-006 | correlation, Prometheus/provider metrics, structured events and audit | Implemented in backend; contract/resilience/admin tests |
 | NFR-OBS-004..005 | trace/alert platform handoff | Partial/evidence pending: collector, dashboard, alert and runbook links |
-| NFR-AI-001, NFR-AI-004..005, NFR-AI-007 | local schema validation, full source provenance/citation, active-page verification, top-K explanation, usage/cost budget and human CV control | Implemented; CV/job/provider tests including <code>test_live_job_discovery.py</code> |
+| NFR-AI-001, NFR-AI-004..005, NFR-AI-007 | local schema validation inside bounded provider retry, full source provenance/citation, active-page verification, typed top-K explanation, usage/cost budget and human CV control | Implemented; CV/job/provider tests including <code>test_live_job_discovery.py</code> and <code>test_provider_resilience.py</code> |
 | NFR-AI-002..003, NFR-AI-006 | model/prompt lineage exists | Partial: versioned offline evaluation datasets, thresholds and staged rollout evidence required |
 | NFR-MNT-001..006 | adapters, OpenAPI sync, offline tests, production fail-fast config with legacy/demo runtime disabled, this matrix and Docker image | Implemented; <code>test_openapi_contract_sync.py</code> and <code>test_production_config.py</code> guard API/config contracts |
 | NFR-UX-001..002 | bilingual payload preservation and UTC/currency schemas | Implemented at API/domain boundary |

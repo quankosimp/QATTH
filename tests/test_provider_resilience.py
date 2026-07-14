@@ -2,6 +2,8 @@ import pytest
 
 from app.core.errors import AppError
 from app.core.provider_resilience import ProviderExecutor
+from app.services.openai_cv import CvAnalysisOutput, OpenAICvAdapter
+from app.services.openai_jobs import OpenAIJobsAdapter
 
 
 class FakeRedis:
@@ -92,3 +94,55 @@ def test_circuit_opens_after_failure_threshold() -> None:
 def test_app_error_supports_existing_positional_call_sites() -> None:
     error = AppError(409, "CONFLICT", "conflict")
     assert error.status_code == 409
+
+
+def test_cv_schema_validation_is_inside_bounded_provider_retry() -> None:
+    adapter = object.__new__(OpenAICvAdapter)
+    responses = [
+        {"data": {"scores": {"clarity": "invalid"}, "findings": []}},
+        {"data": {"scores": {"clarity": 80}, "findings": []}},
+    ]
+    adapter._request = lambda **_: responses.pop(0)  # type: ignore[method-assign]
+
+    result = executor(FakeRedis(), retry_attempts=2).execute(
+        "openai",
+        "cv_analysis",
+        lambda: adapter._validated_request(CvAnalysisOutput, name="test", schema={}, content=[]),
+    )
+
+    assert result.attempts == 2
+    assert result.value["data"]["scores"]["clarity"] == 80
+
+
+def test_job_schema_validation_is_inside_bounded_provider_retry() -> None:
+    adapter = object.__new__(OpenAIJobsAdapter)
+    responses = [
+        {
+            "status": "completed",
+            "output": [{"type": "message", "content": [{"type": "output_text", "text": '{"jobs":[{"title":"incomplete"}]}'}]}],
+        },
+        {
+            "status": "completed",
+            "output": [
+                {"type": "web_search_call", "status": "completed", "id": "search-1", "action": {"type": "search", "sources": []}},
+                {"type": "message", "content": [{"type": "output_text", "text": '{"jobs":[]}', "annotations": []}]},
+            ],
+        },
+    ]
+
+    def operation():
+        raw = responses.pop(0)
+        adapter._validate_live_response(raw)
+        return raw
+
+    result = executor(FakeRedis(), retry_attempts=2).execute("openai", "job_search", operation)
+    assert result.attempts == 2
+
+
+def test_job_explanation_requires_typed_schema() -> None:
+    adapter = object.__new__(OpenAIJobsAdapter)
+    invalid = {"output": [{"type": "message", "content": [{"type": "output_text", "text": '{"reasons":"invalid","gaps":[]}'}]}]}
+    with pytest.raises(AppError) as raised:
+        adapter._validate_explanation_response(invalid)
+    assert raised.value.code == "EXPLANATION_RESPONSE_INVALID"
+    assert raised.value.retryable is True

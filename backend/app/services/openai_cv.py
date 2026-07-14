@@ -4,10 +4,10 @@ import base64
 import json
 import math
 import os
-from typing import Any
+from typing import Any, Literal
 
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from app.core.errors import AppError
 from app.core.provider_resilience import get_provider_executor
@@ -33,15 +33,43 @@ def _strict_schema(model: type[BaseModel]) -> dict[str, Any]:
     return schema
 
 
+class CvAnalysisFinding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    category: str = Field(min_length=1, max_length=120)
+    severity: Literal["info", "improvement", "important"]
+    message: str = Field(min_length=1, max_length=2000)
+    evidence: list[str] = Field(max_length=20)
+    actions: list[str] = Field(max_length=20)
+
+
 class CvAnalysisOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     scores: dict[str, float]
-    findings: list[dict[str, Any]]
+    findings: list[CvAnalysisFinding]
+
+    @field_validator("scores")
+    @classmethod
+    def validate_scores(cls, values: dict[str, float]) -> dict[str, float]:
+        if any(score < 0 or score > 100 for score in values.values()):
+            raise ValueError("CV analysis scores must be between 0 and 100")
+        return values
 
 
 class CvExtractionOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     content: CvContent
     field_confidence: dict[str, float]
     warnings: list[str]
+
+    @field_validator("field_confidence")
+    @classmethod
+    def validate_confidence(cls, values: dict[str, float]) -> dict[str, float]:
+        if any(score < 0 or score > 1 for score in values.values()):
+            raise ValueError("CV field confidence must be between 0 and 1")
+        return values
 
 
 class OpenAICvAdapter:
@@ -68,7 +96,8 @@ class OpenAICvAdapter:
         execution = get_provider_executor().execute(
             "openai",
             "cv_extraction",
-            lambda: self._request(
+            lambda: self._validated_request(
+                CvExtractionOutput,
                 name="cv_extraction",
                 schema=_strict_schema(CvExtractionOutput),
                 content=[
@@ -111,7 +140,8 @@ class OpenAICvAdapter:
         execution = get_provider_executor().execute(
             "openai",
             "cv_analysis",
-            lambda: self._request(
+            lambda: self._validated_request(
+                CvAnalysisOutput,
                 name="cv_analysis",
                 schema={
                 "type": "object",
@@ -154,6 +184,15 @@ class OpenAICvAdapter:
             estimated_cost_minor=self._estimate_cost(payload.get("usage", {}), runtime["configuration"]),
         )
         return CvAnalysisOutput.model_validate(payload["data"]), payload
+
+    def _validated_request(self, output_model: type[BaseModel], **request: Any) -> dict[str, Any]:
+        payload = self._request(**request)
+        try:
+            validated = output_model.model_validate(payload["data"])
+        except (KeyError, TypeError, ValidationError) as exc:
+            raise AppError(502, "AI_RESPONSE_SCHEMA_INVALID", "CV AI provider returned schema-invalid output", retryable=True) from exc
+        payload["data"] = validated.model_dump(mode="json")
+        return payload
 
     @staticmethod
     def _estimate_cost(usage: dict[str, Any], configuration: dict[str, Any]) -> int | None:

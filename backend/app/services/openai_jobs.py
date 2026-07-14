@@ -65,6 +65,13 @@ class LiveJobsPayload(BaseModel):
     jobs: list[LiveJobCandidate] = Field(max_length=30)
 
 
+class JobMatchExplanation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reasons: list[str] = Field(max_length=5)
+    gaps: list[str] = Field(max_length=5)
+
+
 class OpenAIJobsAdapter:
     tracking_query_keys = {
         "fbclid",
@@ -230,10 +237,7 @@ class OpenAIJobsAdapter:
             }
         )
         text, _ = self._text_and_citations(raw)
-        try:
-            return json.loads(text), self._metadata(raw, "job-explanation-v1")
-        except json.JSONDecodeError as exc:
-            raise AppError(502, "EXPLANATION_RESPONSE_INVALID", "Match explanation was invalid", retryable=True) from exc
+        return JobMatchExplanation.model_validate_json(text).model_dump(mode="json"), self._metadata(raw, "job-explanation-v1")
 
     def _metadata(self, raw: dict[str, Any], fallback_prompt_version: str) -> dict[str, Any]:
         usage = raw.get("usage", {})
@@ -265,6 +269,11 @@ class OpenAIJobsAdapter:
 
     def _responses(self, body: dict[str, Any]) -> dict[str, Any]:
         self._require_key()
+        schema_name = str(body.get("text", {}).get("format", {}).get("name") or "")
+        validator = {
+            "live_jobs": self._validate_live_response,
+            "job_match_explanation": self._validate_explanation_response,
+        }.get(schema_name)
         def invoke() -> dict[str, Any]:
             try:
                 response = httpx.post(self.base_url + "/responses", headers=self._headers(), json=body, timeout=self.timeout)
@@ -277,6 +286,8 @@ class OpenAIJobsAdapter:
                 raise AppError(502, "OPENAI_REQUEST_FAILED", "OpenAI request failed", details={"provider_status": status_code}, retryable=status_code is None or status_code == 429 or status_code >= 500) from exc
             if raw.get("status") != "completed":
                 raise AppError(502, "OPENAI_RESPONSE_INCOMPLETE", "OpenAI response was incomplete", retryable=True)
+            if validator is not None:
+                validator(raw)
             return raw
 
         result = get_provider_executor().execute("openai", "job_search", invoke)
@@ -287,6 +298,25 @@ class OpenAIJobsAdapter:
             "latency_ms": result.latency_ms,
         }
         return raw
+
+    def _validate_live_response(self, raw: dict[str, Any]) -> None:
+        output_text, citations = self._text_and_citations(raw)
+        try:
+            jobs = LiveJobsPayload.model_validate_json(output_text).jobs
+        except ValidationError as exc:
+            raise AppError(502, "WEB_SEARCH_RESPONSE_INVALID", "Web search returned invalid job data", retryable=True) from exc
+        _, sources = self._search_evidence(raw)
+        evidence = self._sanitize_links([*citations, *sources])
+        cited = {self._normalize_url(item["url"]) for item in evidence if item.get("url")}
+        if jobs and not any(self._normalize_url(str(job.source_url)) in cited for job in jobs):
+            raise AppError(502, "WEB_SEARCH_PROVENANCE_MISSING", "Web search jobs were not backed by provider source evidence", retryable=True)
+
+    def _validate_explanation_response(self, raw: dict[str, Any]) -> None:
+        text, _ = self._text_and_citations(raw)
+        try:
+            JobMatchExplanation.model_validate_json(text)
+        except ValidationError as exc:
+            raise AppError(502, "EXPLANATION_RESPONSE_INVALID", "Match explanation was invalid", retryable=True) from exc
 
     @staticmethod
     def _text_and_citations(raw: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:

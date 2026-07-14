@@ -131,7 +131,7 @@ def analyze_product_cv_task(self, analysis_id: str) -> dict:
             return {"status": "superseded", "analysis_id": analysis_id}
         ProviderUsageService(db).success(user_id=analysis.user_id, provider="openai", purpose="cv_analysis", resource_type="cv_analysis", resource_id=analysis.id, metadata=provider)
         analysis.scores = output.scores
-        analysis.findings = output.findings
+        analysis.findings = [item.model_dump(mode="json") for item in output.findings]
         analysis.provider = "openai"
         analysis.provider_run_id = provider.get("provider_run_id")
         analysis.model_name = provider.get("model")
