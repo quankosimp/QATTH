@@ -69,3 +69,18 @@ def test_production_rejects_sandbox_payment_and_insecure_redirects() -> None:
     message = str(raised.value)
     assert "live Paddle API" in message
     assert "credential-free HTTPS" in message
+
+
+def test_production_rejects_legacy_and_non_product_job_runtime() -> None:
+    with pytest.raises(ValidationError) as raised:
+        Settings(
+            _env_file=None,
+            app_env="production",
+            legacy_api_enabled=True,
+            job_search_provider="serpapi",
+            job_search_live_external_access=False,
+        )
+    message = str(raised.value)
+    assert "LEGACY_API_ENABLED must be false" in message
+    assert "JOB_SEARCH_PROVIDER must be openai_web_search" in message
+    assert "JOB_SEARCH_LIVE_EXTERNAL_ACCESS must be true" in message

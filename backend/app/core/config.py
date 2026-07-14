@@ -180,6 +180,8 @@ class Settings(BaseSettings):
             return self
 
         errors: list[str] = []
+        if self.legacy_api_enabled:
+            errors.append("LEGACY_API_ENABLED must be false in production")
         if not self.database_url.startswith(("postgresql://", "postgresql+psycopg://")):
             errors.append("DATABASE_URL must use PostgreSQL in production")
         if self.auto_create_tables:
@@ -248,7 +250,11 @@ class Settings(BaseSettings):
             errors.append("Wildcard CORS is not allowed in production")
         if any(urlsplit(origin).scheme != "https" for origin in self.cors_origins):
             errors.append("CORS_ORIGINS must contain only HTTPS origins in production")
-        if self.job_search_provider == "openai_web_search" and not self.job_search_allowed_domains:
+        if self.job_search_provider != "openai_web_search":
+            errors.append("JOB_SEARCH_PROVIDER must be openai_web_search in production")
+        if not self.job_search_live_external_access:
+            errors.append("JOB_SEARCH_LIVE_EXTERNAL_ACCESS must be true in production")
+        if not self.job_search_allowed_domains:
             errors.append("JOB_SEARCH_ALLOWED_DOMAINS is required for OpenAI web search in production")
         if errors:
             raise ValueError("; ".join(errors))
