@@ -7,3 +7,11 @@ registered on the shared metadata without coupling domain services together.
 from app.models.foundation import IdempotencyRecord, OutboxEvent
 
 __all__ = ["IdempotencyRecord", "OutboxEvent"]
+
+from backend.app.models.identity import (
+    AccountStatusEvent,
+    AuthIdentity,
+    UserConsent,
+    UserProductProfile,
+    UserSession,
+)
