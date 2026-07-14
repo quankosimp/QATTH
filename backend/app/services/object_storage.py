@@ -22,6 +22,7 @@ class ObjectStat:
 class ObjectStorage:
     def __init__(self) -> None:
         settings = get_settings()
+        self.settings = settings
         self.backend = os.getenv("STORAGE_BACKEND", str(getattr(settings, "storage_backend", "local")))
         self.bucket = os.getenv("R2_BUCKET", str(getattr(settings, "r2_bucket", "qatth-private")))
         self.local_root = Path(os.getenv("UPLOAD_DIR", str(getattr(settings, "upload_dir", "data/uploads")))) / "product"
@@ -110,10 +111,10 @@ class ObjectStorage:
     def _client(self, timeout_seconds: float | None = None):
         from minio import Minio
 
-        endpoint = os.getenv("R2_ENDPOINT", "")
+        endpoint = os.getenv("R2_ENDPOINT", str(getattr(self.settings, "r2_endpoint_url", "") or ""))
         parsed = urlparse(endpoint if "://" in endpoint else "https://" + endpoint)
-        access_key = os.getenv("R2_ACCESS_KEY_ID", "")
-        secret_key = os.getenv("R2_SECRET_ACCESS_KEY", "")
+        access_key = os.getenv("R2_ACCESS_KEY_ID", str(getattr(self.settings, "r2_access_key_id", "") or ""))
+        secret_key = os.getenv("R2_SECRET_ACCESS_KEY", str(getattr(self.settings, "r2_secret_access_key", "") or ""))
         if not parsed.hostname or not access_key or not secret_key or not self.bucket:
             raise AppError(500, "STORAGE_CONFIGURATION_INVALID", "R2 storage is not fully configured")
         host = parsed.hostname + ((":" + str(parsed.port)) if parsed.port else "")

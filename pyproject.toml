@@ -1,7 +1,7 @@
 [project]
 name = "qatth-career-platform"
 version = "0.1.0"
-description = "Backend-first MVP for IT student CV scanning, virtual interviews, and job matching."
+description = "Production-oriented backend for IT student CV intelligence, virtual interviews, and job matching."
 requires-python = ">=3.11"
 dependencies = [
     "alembic>=1.14.0",

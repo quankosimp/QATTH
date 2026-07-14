@@ -30,7 +30,12 @@ async def lifespan(_: FastAPI):
     from app.api.v1.health import assert_database_schema_compatible
 
     assert_database_schema_compatible()
-    yield
+    try:
+        yield
+    finally:
+        from app.core.db import engine
+
+        engine.dispose()
 
 
 def create_app() -> FastAPI:
