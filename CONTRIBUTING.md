@@ -1,6 +1,6 @@
 # Contributing to QATTH
 
-Tài liệu này quy định cách thay đổi backend và product contract để code, requirement, API, database và vận hành không lệch nhau khi chuyển từ demo sang production.
+Tài liệu này quy định cách thay đổi backend Product v1 để code, requirement, API, database và bằng chứng vận hành không lệch nhau.
 
 ## Nguyên tắc
 
@@ -64,12 +64,12 @@ Quy tắc:
 
 ## Quản trị OpenAPI
 
-[docs/api/openapi.yaml](docs/api/openapi.yaml) mô tả Product v1 target, không chỉ phản chiếu code demo.
+[docs/api/openapi.yaml](docs/api/openapi.yaml) là contract đã commit được đồng bộ từ FastAPI runtime. Metadata sản phẩm như requirement ID, scope, mô tả và trạng thái được giữ bởi <code>scripts/sync_openapi.py</code>.
 
 Mỗi operation phải có:
 
 - <code>operationId</code> duy nhất.
-- <code>x-implementation-status</code>: <code>implemented-demo</code>, <code>partial</code> hoặc <code>planned</code>.
+- <code>x-implementation-status</code>: <code>implemented</code>, <code>partial</code> hoặc <code>planned</code>.
 - Security requirement hoặc mô tả rõ vì sao public.
 - Success response và error envelope chuẩn.
 - Request/response schema không dùng object tự do nếu có thể định nghĩa được.
@@ -77,6 +77,15 @@ Mỗi operation phải có:
 - Requirement ID trong <code>x-requirement-ids</code>.
 
 Breaking change cần version mới hoặc migration window. Không xóa field đang được client sử dụng chỉ vì backend không còn cần field đó.
+
+Sau khi thay đổi route/schema, chạy:
+
+~~~bash
+PYTHONPATH=backend .venv/bin/python scripts/sync_openapi.py
+PYTHONPATH=backend .venv/bin/python scripts/sync_openapi.py --check
+~~~
+
+Review phần metadata được giữ trong script trước khi commit endpoint mới; contract test sẽ từ chối runtime operation thiếu requirement ID.
 
 ## Database và migration
 
@@ -136,6 +145,7 @@ Lệnh local hiện tại:
 ~~~bash
 .venv/bin/pytest -q
 .venv/bin/ruff check backend tests
+PYTHONPATH=backend .venv/bin/python scripts/sync_openapi.py --check
 ~~~
 
 Không cập nhật snapshot/fixture chỉ để làm test xanh nếu chưa xác nhận hành vi mới là đúng.
@@ -153,7 +163,7 @@ Không cập nhật snapshot/fixture chỉ để làm test xanh nếu chưa xác
 
 ## Definition of Done
 
-Một tính năng chỉ hoàn thành khi acceptance criteria đạt, contract và implementation nhất quán, migration an toàn, retry không tạo duplicate side effect, test chính pass, observability đủ điều tra lỗi, dữ liệu nhạy cảm được bảo vệ, provider có cost/rate limit và trạng thái implementation phản ánh đúng thực tế.
+Một tính năng chỉ hoàn thành khi acceptance criteria đạt, contract và implementation nhất quán, migration an toàn, retry không tạo duplicate side effect, test chính pass, observability đủ điều tra lỗi, dữ liệu nhạy cảm được bảo vệ, provider có cost/rate limit và [traceability matrix](docs/requirements/traceability.md) phản ánh đúng bằng chứng thực tế.
 
 ## Phân chia trách nhiệm triển khai
 

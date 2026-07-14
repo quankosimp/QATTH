@@ -2,7 +2,7 @@
 
 ## 1. Phạm vi
 
-Đây là logical schema mục tiêu cho QATTH Product v1, không phải bản sao schema demo hiện tại. Implementation phải chuyển thành migration PostgreSQL có review về constraint, index, lock, backfill và rollback.
+Đây là logical schema chuẩn cho QATTH Product v1. Backend đã quản lý physical schema bằng Alembic; tài liệu vẫn mô tả thêm invariant/index cần được kiểm tra trên PostgreSQL production thay vì thay thế migration source code.
 
 ## 2. Quyết định lưu trữ
 
@@ -17,6 +17,16 @@
 | Secret/API key | Secret manager do deployment team cung cấp | Không thuộc database/application image |
 
 Không lưu PDF trong PostgreSQL trừ artifact rất nhỏ có lý do được ADR chấp thuận. Database lưu object key, checksum, metadata và ownership.
+
+### Migration coverage hiện tại
+
+| Revisions | Phạm vi |
+|---|---|
+| Foundation đến <code>0006</code> | Core schema, background tasks, file assets, model runs, security/privacy và candidate discovery |
+| <code>0007</code>-<code>0014</code> | Identity/profile/consent, Product CV, interview, job search, recommendation, billing, privacy và admin/ops |
+| <code>0015</code>-<code>0019</code> | Identity/file/CV hardening, interview hardening, job search hardening, billing dual-control và provider usage observability |
+
+Migration trong <code>migrations/versions/</code> là lịch sử physical schema bất biến. Bảng/constraint trong tài liệu chưa có revision tương ứng phải được coi là gap và cần migration riêng; không dùng <code>create_all</code> để thay thế migration ở production.
 
 ## 3. Quy ước chung
 

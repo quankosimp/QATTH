@@ -315,24 +315,22 @@ Feature flag phù hợp cho live web search, model version, reranker và billing
 - Data export/deletion và backup retention.
 - Break-glass access có audit.
 
-## 14. Production readiness blockers của demo hiện tại
+## 14. Backend production readiness gates
 
-Trước production, backend phải hoàn thành ít nhất:
+| Gate | Trạng thái | Owner / bằng chứng cần có |
+|---|---|---|
+| Migration chain, Product v1 domain schema | Implemented | Backend; Alembic revisions và migration test |
+| OIDC/session, ownership/scope, account control | Implemented | Backend contract/security tests; deployment inject issuer/audience |
+| CV draft-confirm, immutable version và lineage | Implemented | Backend contract tests và provider evaluation dataset |
+| Hybrid job search, verification, rerank và provenance | Implemented, provider evidence pending | Backend; staging source/search quality report |
+| Credit ledger, reservation/reconciliation và dual control | Implemented | Backend contract/concurrency tests |
+| Gemini Live realtime/reconnect/backpressure | Partial | Backend + deployment; staging voice and WebSocket load evidence |
+| Payment checkout và signed webhook | Partial | Backend + payment owner; provider certification/replay evidence |
+| R2, managed Redis/PostgreSQL integration | Environment pending | Deployment provisions; backend runs integration suite/config validation |
+| Logs/metrics/traces, dashboards và alerts | Instrumented, platform pending | Backend emits telemetry; deployment owns collector/dashboard/alerts |
+| Load, security, migration và restore acceptance | Evidence pending | Joint release gate; results linked from release record |
 
-1. Migration chain PostgreSQL thay vì tạo schema ad hoc.
-2. OIDC authentication và authorization/ownership test đầy đủ.
-3. R2 adapter và direct signed upload; bỏ phụ thuộc production vào MinIO.
-4. Redis distributed rate limit/idempotency/coordination.
-5. pgvector column/index thật thay JSON embedding.
-6. CV draft-confirm state machine và immutable version.
-7. Gemini Live realtime gateway có reconnect/backpressure.
-8. OpenAI adapter, structured validation, model run/cost/evaluation.
-9. Job source verification, provenance, freshness và safe fetch.
-10. Transactional outbox, webhook inbox và retry semantics.
-11. Credit ledger/reservation/reconciliation nếu bật paid feature.
-12. Privacy export/deletion/retention.
-13. Structured logs, metrics, traces, alert/runbook.
-14. Load, security, migration và restore tests theo NFR.
+`Implemented` ở bảng này chỉ xác nhận artifact backend; không thay thế hạ tầng, SLO hoặc provider acceptance do deployment team chịu trách nhiệm.
 
 ## 15. Handoff artifacts
 

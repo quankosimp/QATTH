@@ -129,3 +129,4 @@ Tài liệu này mô tả hành vi mục tiêu của QATTH Product v1. Đây là
 - Logical tables trong database schema nêu domain requirement tương ứng.
 - Architecture flow dùng cùng resource/state name với OpenAPI.
 - Test case nên có requirement ID trong tên, marker hoặc metadata.
+- Trạng thái implementation và bằng chứng hiện hành được quản lý tại [Requirement Traceability](traceability.md); không suy ra trạng thái production chỉ từ việc endpoint tồn tại.

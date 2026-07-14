@@ -14,19 +14,19 @@ Sản phẩm tạo một vòng lặp hoàn chỉnh:
 
 ## Trạng thái sản phẩm
 
-Repository hiện chứa backend demo đã chạy được và bộ tài liệu Product v1 định hướng quá trình refactor thành sản phẩm production.
+Repository chứa backend Product v1 theo kiến trúc modular monolith, migration PostgreSQL và API contract được đồng bộ từ runtime. Phần lõi CV, interview lifecycle, job search, recommendation, billing ledger, privacy và administration đã có implementation cùng contract test; tích hợp realtime/provider thanh toán và bằng chứng SLO production vẫn là release gate.
 
-| Phạm vi | Hiện tại | Đích Product v1 |
+| Phạm vi | Trạng thái backend | Release gate còn lại |
 |---|---|---|
-| CV | Upload, scan, lưu phiên bản | Draft có cấu trúc, người dùng duyệt, lịch sử phiên bản, phân tích có truy vết |
-| Phỏng vấn | Session và transcript cơ bản | Gemini Live realtime, event log, evaluation bất đồng bộ, báo cáo |
-| Việc làm | Crawl/search và matching thử nghiệm | PostgreSQL FTS + pgvector, OpenAI web search, xác minh URL, deduplicate, rerank |
-| AI | Gemini và adapter demo | OpenAI cho text/search/embedding, Gemini Live cho voice, model run audit |
-| Dữ liệu | PostgreSQL/SQLite và object storage demo | Managed PostgreSQL + pgvector, R2, Redis |
-| Vận hành | Docker Compose local | Container API/worker có health check, migration và observability |
-| Thanh toán | Chưa có | Hybrid subscription + top-up, versioned catalog, bucketed credits và webhook idempotent |
+| CV | Upload intent, scan attempt, JSON draft chỉnh sửa, confirm immutable version, analysis/retry/archive | Evaluation dataset và kiểm chứng R2/malware pipeline ở môi trường production |
+| Phỏng vấn | Plan/session/event/transcript, timeout/cancel, report retry và feedback | Kiểm chứng Gemini Live voice, reconnect/backpressure và voice load |
+| Việc làm | Catalog, provenance, verification, FTS + pgvector, live discovery, rerank, SSE và application tracking | Đánh giá retrieval trên dữ liệu thật và kiểm chứng nguồn web/provider |
+| AI | Provider adapter, resilience, lineage, usage/cost và budget guardrail | Offline quality gate, staged model rollout và production credentials |
+| Dữ liệu | Migration chain PostgreSQL/pgvector, Redis coordination và object-storage abstraction | Managed service, restore rehearsal và production retention evidence |
+| Vận hành | Docker image/Compose, health/readiness, diagnostics, metrics và audit | SLO/load/security evidence, dashboard/alerts do deployment team vận hành |
+| Thanh toán | Catalog, trial, bucketed ledger, reservation/refund và dual control | Payment checkout/webhook adapter được chứng nhận end-to-end |
 
-Mỗi operation trong [OpenAPI Product v1](docs/api/openapi.yaml) có trường <code>x-implementation-status</code> để phân biệt <code>implemented-demo</code>, <code>partial</code> và <code>planned</code>. Tài liệu mục tiêu không đồng nghĩa toàn bộ endpoint đã tồn tại trong code hiện tại.
+Mỗi operation trong [OpenAPI Product v1](docs/api/openapi.yaml) có trường <code>x-implementation-status</code> là <code>implemented</code>, <code>partial</code> hoặc <code>planned</code>. Contract được sinh từ runtime và giữ metadata requirement bằng [script đồng bộ](scripts/sync_openapi.py); CI/test phải chặn operation runtime không có trong contract.
 
 ## Đối tượng và giá trị
 
@@ -85,7 +85,7 @@ Xem [Architecture Overview](docs/architecture/overview.md).
 ├── scripts/                  # Local/database utilities
 ├── docs/
 │   ├── requirements/         # Functional và non-functional requirements
-│   ├── billing\/              # Pricing, subscription, top-up và credit policy
+│   ├── billing/              # Pricing, subscription, top-up và credit policy
 │   ├── architecture/         # System context, components và data flows
 │   ├── api/openapi.yaml      # Product v1 API contract
 │   ├── database/schema.md    # Logical schema và migration rules
@@ -118,13 +118,13 @@ docker compose up --build
 - Swagger UI: <code>http://localhost:8000/docs</code>
 - OpenAPI runtime hiện tại: <code>http://localhost:8000/openapi.json</code>
 
-[docs/api/openapi.yaml](docs/api/openapi.yaml) là contract mục tiêu Product v1; OpenAPI sinh từ backend là hành vi hiện đã implement. Khi refactor, chênh lệch giữa hai contract phải được theo dõi bằng trạng thái implementation và contract tests.
+[docs/api/openapi.yaml](docs/api/openapi.yaml) là contract đã commit của backend Product v1. Chạy <code>PYTHONPATH=backend .venv/bin/python scripts/sync_openapi.py --check</code> để phát hiện contract bị lệch runtime.
 
 Chạy backend trực tiếp:
 
 ~~~bash
 uv sync --all-groups
-uv run uvicorn backend.app.main:app --reload
+uv run uvicorn app.main:app --app-dir backend --reload
 ~~~
 
 Chạy test và lint:
@@ -165,6 +165,7 @@ CV, transcript, đánh giá phỏng vấn và lịch sử ứng tuyển là dữ
 
 - [Functional Requirements](docs/requirements/functional-requirements.md)
 - [Non-functional Requirements](docs/requirements/non-functional-requirements.md)
+- [Requirement Traceability](docs/requirements/traceability.md)
 - [Architecture Overview](docs/architecture/overview.md)
 - [Components](docs/architecture/components.md)
 - [Data Flow](docs/architecture/data-flow.md)
@@ -172,6 +173,7 @@ CV, transcript, đánh giá phỏng vấn và lịch sử ứng tuyển là dữ
 - [Database Schema](docs/database/schema.md)
 - [Pricing and Credits](docs/billing/pricing-and-credits.md)
 - [Production Runtime](docs/deployment/production.md)
+- [Load Testing](docs/operations/load-testing.md)
 - [ADR 0001: PostgreSQL](docs/adr/0001-use-postgresql.md)
 - [ADR 0002: OpenAI API](docs/adr/0002-use-openai-api.md)
 - [ADR 0003: Provider-neutral Billing](docs/adr/0003-use-provider-neutral-billing-ledger.md)

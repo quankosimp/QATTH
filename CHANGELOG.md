@@ -7,19 +7,23 @@ Tất cả thay đổi đáng chú ý của QATTH được ghi lại trong file 
 ## [Unreleased]
 
 ### Added
+- Backend Product v1 cho identity/profile/consent, file/CV lifecycle, interview, job discovery, recommendation, billing, privacy, administration và operations.
+- Migration chain cho các domain Product v1 và các hardening revision về identity, interview, job search, billing dual-control và provider usage.
+- Provider resilience gồm timeout, retry jitter, circuit breaker, bulkhead, usage/cost ledger và budget guardrail.
 - Đặc tả hybrid subscription, top-up, signup trial, bucketed credits và provider-neutral payment.
-
 - Bộ requirements có ID ổn định cho Product v1.
 - Kiến trúc mục tiêu tách API, worker, PostgreSQL/pgvector, Redis và object storage.
-- OpenAPI 3.1 contract mục tiêu với trạng thái implementation trên từng operation.
+- OpenAPI 3.1 đồng bộ từ FastAPI runtime, giữ requirement metadata và có contract drift test.
 - Logical database schema cho CV, interview, jobs, recommendation, billing và operations.
 - Production runtime handoff và Architecture Decision Records.
+- Requirement traceability matrix và kịch bản k6 cho smoke/load/stress test.
 
 ### Changed
 
-- Định vị repository từ backend demo sang nền tảng hỗ trợ nghề nghiệp cho sinh viên IT.
+- Định vị repository từ backend demo sang backend Product v1 của nền tảng hỗ trợ nghề nghiệp cho sinh viên IT.
 - Chuẩn hóa ranh giới sử dụng OpenAI và Gemini Live.
 - Chuẩn hóa luồng CV thành draft để người dùng chỉnh sửa và xác nhận trước khi lưu bản chính thức.
+- Tắt legacy API mặc định; Product API sử dụng namespace <code>/v1</code> và import root <code>app.*</code> thống nhất.
 
 ## [0.1.0] - 2026-07-14
 

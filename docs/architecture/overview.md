@@ -138,28 +138,25 @@ Có thể phát event từng phần. Run thất bại một provider vẫn có t
 - Idempotency record hoặc unique constraint bảo vệ client retry và provider duplicate.
 - Snapshot input IDs giúp report/ranking tái lập dù profile active thay đổi.
 
-## 8. Demo hiện tại và target
+## 8. Trạng thái implementation
 
-Demo hiện tại đã có nhiều domain resource trong FastAPI, background tasks, PostgreSQL/pgvector container, Redis và object storage tương thích S3. Tuy nhiên target yêu cầu refactor quan trọng:
+Backend hiện là modular monolith FastAPI với namespace <code>/v1</code>, migration PostgreSQL/pgvector, Redis coordination, object-storage abstraction và worker. Các boundary đã có trong code:
 
-- Authentication demo sang OIDC boundary và distributed session/revocation.
-- In-process rate limit sang Redis/distributed policy.
-- JSON embedding sang pgvector column/index thực.
-- CV scan trực tiếp sang draft/confirm state machine rõ.
-- Job crawl/search thử nghiệm sang hybrid retrieval + live web search + verification.
-- AI call rời rạc sang provider adapter, model run audit, eval và cost controls.
-- Schema tạo trực tiếp sang migration chain production.
-- Side effect sang outbox/idempotency/reconciliation.
-- MinIO local chỉ là emulator; production target dùng R2.
-- Celery có thể tiếp tục hoặc thay thế, nhưng queue contract không phụ thuộc framework.
+- OIDC/local development authentication, session revocation, ownership/scope và account lock.
+- Upload intent, file security state, CV scan attempt, editable draft, immutable version và analysis lineage.
+- Interview session/event/report lifecycle, timeout/retry và provider usage; Gemini Live voice vẫn cần integration/load evidence.
+- Job catalog, provenance/verification, FTS + pgvector, live discovery, hard filter, rerank, top-result explanation và SSE.
+- Recommendation, application tracking, privacy workflow, administration, audit và provider diagnostics.
+- Versioned billing catalog, trial/buckets, append-only credit ledger, reservation/reconciliation và dual control; checkout/webhook provider vẫn partial.
+- Timeout/retry jitter/circuit breaker/bulkhead, request correlation, metrics và provider cost budget.
 
-## 9. Evolution path
+MinIO trong Compose chỉ là emulator local; production object store là R2. Celery là implementation queue hiện tại nhưng domain contract không phụ thuộc framework.
 
-1. **Foundation:** migrations, OIDC, object abstraction, Redis rate limit, standard errors/idempotency, observability.
-2. **CV lifecycle:** upload intent, extraction schema, editable draft, confirm/version, quality eval.
-3. **Interview:** realtime gateway/Gemini Live, event persistence, evaluation/report.
-4. **Discovery:** normalized job store, FTS/pgvector, OpenAI web search, verification, rerank/SSE.
-5. **Commercial/operations:** subscription, credit ledger, webhook inbox, admin, privacy workflows.
-6. **Hardening:** load/security/restore tests, SLO alerts, provider failover/degradation and cost tuning.
+## 9. Release hardening path
 
-Mỗi giai đoạn phải giữ backward compatibility hoặc có migration plan; không triển khai toàn bộ bằng một refactor big-bang.
+1. **Provider acceptance:** Gemini Live voice và payment checkout/webhook chạy end-to-end trong staging với failure/replay test.
+2. **Quality gates:** dataset đánh giá CV extraction, interview rubric, retrieval relevance và citation validity theo model version.
+3. **Operational evidence:** load/stress/soak, migration rehearsal, restore test, security test và SLO dashboard/alerts.
+4. **Production handoff:** image digest, config contract, migration note, runbook và known-risk list bàn giao deployment team.
+
+Trạng thái chi tiết và khoảng trống bằng chứng nằm trong [Requirement Traceability](../requirements/traceability.md).

@@ -120,7 +120,7 @@ Không log raw audio/event tùy tiện. Nếu lưu audio, cần consent, retenti
 
 ## 9. Retrieval và ranking
 
-Pipeline mục tiêu:
+Pipeline Product v1:
 
 1. Hard filters từ preference/compliance.
 2. PostgreSQL FTS lấy lexical candidates.
