@@ -182,3 +182,27 @@ class CreditAdjustmentRequest(BaseModel):
     amount: int
     reason: str = Field(min_length=3, max_length=500)
     reference: str | None = Field(default=None, max_length=255)
+
+
+class CreditAdjustmentDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class CreditAdjustmentView(BaseModel):
+    id: str
+    target_user_id: str
+    amount: int
+    reason: str
+    reference: str | None
+    status: Literal["pending", "executed", "rejected"]
+    dual_control_required: bool
+    policy_threshold: int
+    requested_by_user_id: str
+    approved_by_user_id: str | None
+    decision_reason: str | None
+    ledger_entry: CreditLedgerEntryView | None
+    created_at: datetime
+    decided_at: datetime | None
+    executed_at: datetime | None

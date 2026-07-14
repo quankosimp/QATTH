@@ -17,7 +17,8 @@ from app.schemas.product_billing import (
     CreateCheckoutRequest,
     CreditAccountView,
     CreditAdjustmentRequest,
-    CreditLedgerEntryView,
+    CreditAdjustmentDecisionRequest,
+    CreditAdjustmentView,
     FeatureCreditPriceView,
     RedirectSessionView,
     SignupTrialPolicyView,
@@ -30,6 +31,7 @@ from app.services.product_billing import ProductBillingService
 router = APIRouter(tags=["Billing"])
 billing_read = require_product_scopes("admin:billing:read")
 billing_write = require_product_scopes("admin:billing:write")
+billing_approve = require_product_scopes("admin:billing:approve")
 
 
 @router.get("/billing/catalog", response_model=APIResponse[BillingCatalogView])
@@ -110,7 +112,21 @@ def update_signup_trial_policy(payload: UpdateSignupTrialPolicyRequest, request:
     return make_response(SignupTrialPolicyView(policy_key=policy.policy_key, enabled=policy.enabled, trigger=policy.trigger, credit_grant=policy.credit_grant, valid_days=policy.valid_days, grants_per_user=policy.grants_per_user, policy_version=policy.policy_version, effective_from=policy.effective_from), request=request)
 
 
-@router.post("/admin/credit-adjustments", response_model=APIResponse[CreditLedgerEntryView], status_code=status.HTTP_201_CREATED)
+@router.post("/admin/credit-adjustments", response_model=APIResponse[CreditAdjustmentView], status_code=status.HTTP_202_ACCEPTED)
 def create_credit_adjustment(payload: CreditAdjustmentRequest, request: Request, idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128), current: ProductCurrentUser = Depends(billing_write), db: Session = Depends(get_db)):
-    entry = ProductBillingService(db).adjust_credits(current, payload, idempotency_key)
-    return make_response(CreditLedgerEntryView.model_validate({column: getattr(entry, column) for column in ("id", "bucket_id", "amount", "entry_type", "balance_after", "description", "reference_type", "reference_id", "occurred_at")}), request=request)
+    return make_response(ProductBillingService(db).request_credit_adjustment(current, payload, idempotency_key), request=request)
+
+
+@router.get("/admin/credit-adjustments/{adjustment_id}", response_model=APIResponse[CreditAdjustmentView])
+def get_credit_adjustment(adjustment_id: str, request: Request, current: ProductCurrentUser = Depends(billing_read), db: Session = Depends(get_db)):
+    return make_response(ProductBillingService(db).get_credit_adjustment(adjustment_id), request=request)
+
+
+@router.post("/admin/credit-adjustments/{adjustment_id}/approve", response_model=APIResponse[CreditAdjustmentView])
+def approve_credit_adjustment(adjustment_id: str, payload: CreditAdjustmentDecisionRequest, request: Request, idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128), current: ProductCurrentUser = Depends(billing_approve), db: Session = Depends(get_db)):
+    return make_response(ProductBillingService(db).approve_credit_adjustment(current, adjustment_id, payload, idempotency_key), request=request)
+
+
+@router.post("/admin/credit-adjustments/{adjustment_id}/reject", response_model=APIResponse[CreditAdjustmentView])
+def reject_credit_adjustment(adjustment_id: str, payload: CreditAdjustmentDecisionRequest, request: Request, idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128), current: ProductCurrentUser = Depends(billing_approve), db: Session = Depends(get_db)):
+    return make_response(ProductBillingService(db).reject_credit_adjustment(current, adjustment_id, payload, idempotency_key), request=request)

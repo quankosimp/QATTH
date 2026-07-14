@@ -272,3 +272,29 @@ class BillingCommand(Base):
     response_snapshot = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     completed_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class CreditAdjustmentApproval(Base):
+    __tablename__ = "product_credit_adjustment_approvals"
+    __table_args__ = (
+        UniqueConstraint("requested_by_user_id", "idempotency_key", name="uq_product_credit_adjustment_request"),
+        Index("ix_product_credit_adjustment_status_created", "status", "created_at"),
+    )
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    requested_by_user_id = Column(String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    approved_by_user_id = Column(String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=True)
+    target_user_id = Column(String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    amount = Column(Integer, nullable=False)
+    reason = Column(Text, nullable=False)
+    reference = Column(String(255), nullable=True)
+    status = Column(String(24), nullable=False, default="pending")
+    dual_control_required = Column(Boolean, nullable=False, default=True)
+    policy_threshold = Column(Integer, nullable=False)
+    idempotency_key = Column(String(128), nullable=False)
+    request_hash = Column(String(64), nullable=False)
+    decision_reason = Column(Text, nullable=True)
+    ledger_entry_id = Column(String(36), ForeignKey("product_credit_ledger_entries.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    decided_at = Column(DateTime(timezone=True), nullable=True)
+    executed_at = Column(DateTime(timezone=True), nullable=True)

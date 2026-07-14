@@ -71,6 +71,8 @@ class Settings(BaseSettings):
     payment_api_key: str | None = None
     payment_webhook_secret: str | None = None
     payment_success_url_allowlist: list[str] = Field(default_factory=list)
+    credit_adjustment_dual_control_enabled: bool = True
+    credit_adjustment_dual_control_threshold: int = 500
 
     job_search_provider: str = "openai_web_search"
     serpapi_api_key: str | None = None
@@ -101,6 +103,8 @@ class Settings(BaseSettings):
             raise ValueError("LEGACY_API_PREFIX must not overlap API_V1_PREFIX.")
         if not self.product_processing_policy_version.strip():
             raise ValueError("PRODUCT_PROCESSING_POLICY_VERSION must not be empty.")
+        if self.credit_adjustment_dual_control_threshold < 1:
+            raise ValueError("CREDIT_ADJUSTMENT_DUAL_CONTROL_THRESHOLD must be positive.")
 
         if self.app_env != "production":
             return self

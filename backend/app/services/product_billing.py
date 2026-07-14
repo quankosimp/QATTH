@@ -21,6 +21,7 @@ from app.models.product_billing import (
     BillingOffer,
     BillingSubscription,
     CreditAccount,
+    CreditAdjustmentApproval,
     CreditBucket,
     CreditLedgerEntry,
     CreditReservation,
@@ -39,6 +40,8 @@ from app.schemas.product_billing import (
     CreateCheckoutRequest,
     CreditAccountView,
     CreditAdjustmentRequest,
+    CreditAdjustmentDecisionRequest,
+    CreditAdjustmentView,
     CreditBucketView,
     CreditLedgerEntryView,
     FeatureCreditPriceView,
@@ -631,20 +634,156 @@ class ProductBillingService:
         self.db.refresh(policy)
         return policy
 
-    def adjust_credits(self, current: ProductCurrentUser, payload: CreditAdjustmentRequest, idempotency_key: str | None) -> CreditLedgerEntry:
+    def request_credit_adjustment(
+        self,
+        current: ProductCurrentUser,
+        payload: CreditAdjustmentRequest,
+        idempotency_key: str,
+    ) -> CreditAdjustmentView:
         if payload.amount == 0:
             raise AppError(422, "ZERO_CREDIT_ADJUSTMENT", "Credit adjustment cannot be zero")
         user = self.db.get(User, payload.user_id)
         if user is None:
             raise AppError(404, "USER_NOT_FOUND", "User was not found")
-        account = self._account(user.id, lock=True)
-        if idempotency_key:
-            existing = self.db.scalar(select(CreditLedgerEntry).where(CreditLedgerEntry.account_id == account.id, CreditLedgerEntry.idempotency_key == "adjustment:" + idempotency_key))
-            if existing is not None:
-                return existing
+        command, replay = self._command(
+            current.id,
+            "request_credit_adjustment",
+            idempotency_key,
+            payload.model_dump(mode="json"),
+        )
+        if replay:
+            return self.adjustment_view(self.db.get(CreditAdjustmentApproval, command.resource_id))
+        settings = get_settings()
+        threshold = settings.credit_adjustment_dual_control_threshold
+        requires_approval = settings.credit_adjustment_dual_control_enabled and abs(payload.amount) >= threshold
+        request_hash = hashlib.sha256(payload.model_dump_json().encode("utf-8")).hexdigest()
+        adjustment = CreditAdjustmentApproval(
+            requested_by_user_id=current.id,
+            target_user_id=user.id,
+            amount=payload.amount,
+            reason=payload.reason,
+            reference=payload.reference,
+            status="pending" if requires_approval else "executed",
+            dual_control_required=requires_approval,
+            policy_threshold=threshold,
+            idempotency_key=idempotency_key,
+            request_hash=request_hash,
+        )
+        self.db.add(adjustment)
+        self.db.flush()
+        if not requires_approval:
+            entry = self._apply_credit_adjustment(current.id, payload, "adjustment:" + adjustment.id)
+            adjustment.ledger_entry_id = entry.id
+            adjustment.executed_at = _utcnow()
+        self._complete_command(command, "credit_adjustment", adjustment.id, {"id": adjustment.id})
+        self.db.commit()
+        self.db.refresh(adjustment)
+        return self.adjustment_view(adjustment)
+
+    def get_credit_adjustment(self, adjustment_id: str) -> CreditAdjustmentView:
+        adjustment = self.db.get(CreditAdjustmentApproval, adjustment_id)
+        if adjustment is None:
+            raise AppError(404, "CREDIT_ADJUSTMENT_NOT_FOUND", "Credit adjustment was not found")
+        return self.adjustment_view(adjustment)
+
+    def approve_credit_adjustment(
+        self,
+        current: ProductCurrentUser,
+        adjustment_id: str,
+        payload: CreditAdjustmentDecisionRequest,
+        idempotency_key: str,
+    ) -> CreditAdjustmentView:
+        command, replay = self._command(
+            current.id,
+            "approve_credit_adjustment:" + adjustment_id,
+            idempotency_key,
+            payload.model_dump(mode="json"),
+        )
+        if replay:
+            return self.adjustment_view(self.db.get(CreditAdjustmentApproval, command.resource_id))
+        adjustment = self.db.scalar(
+            select(CreditAdjustmentApproval)
+            .where(CreditAdjustmentApproval.id == adjustment_id)
+            .with_for_update()
+        )
+        if adjustment is None:
+            raise AppError(404, "CREDIT_ADJUSTMENT_NOT_FOUND", "Credit adjustment was not found")
+        if adjustment.status != "pending":
+            raise AppError(409, "CREDIT_ADJUSTMENT_ALREADY_DECIDED", "Credit adjustment is no longer pending")
+        if adjustment.requested_by_user_id == current.id:
+            raise AppError(409, "DUAL_CONTROL_SELF_APPROVAL_FORBIDDEN", "Requester cannot approve their own adjustment")
+        decision_time = _utcnow()
+        request_payload = CreditAdjustmentRequest(
+            user_id=adjustment.target_user_id,
+            amount=adjustment.amount,
+            reason=adjustment.reason,
+            reference=adjustment.reference,
+        )
+        entry = self._apply_credit_adjustment(current.id, request_payload, "adjustment:" + adjustment.id)
+        adjustment.approved_by_user_id = current.id
+        adjustment.decision_reason = payload.reason
+        adjustment.status = "executed"
+        adjustment.ledger_entry_id = entry.id
+        adjustment.decided_at = decision_time
+        adjustment.executed_at = decision_time
+        self._complete_command(command, "credit_adjustment", adjustment.id, {"id": adjustment.id})
+        self.db.commit()
+        self.db.refresh(adjustment)
+        return self.adjustment_view(adjustment)
+
+    def reject_credit_adjustment(
+        self,
+        current: ProductCurrentUser,
+        adjustment_id: str,
+        payload: CreditAdjustmentDecisionRequest,
+        idempotency_key: str,
+    ) -> CreditAdjustmentView:
+        command, replay = self._command(
+            current.id,
+            "reject_credit_adjustment:" + adjustment_id,
+            idempotency_key,
+            payload.model_dump(mode="json"),
+        )
+        if replay:
+            return self.adjustment_view(self.db.get(CreditAdjustmentApproval, command.resource_id))
+        adjustment = self.db.scalar(
+            select(CreditAdjustmentApproval)
+            .where(CreditAdjustmentApproval.id == adjustment_id)
+            .with_for_update()
+        )
+        if adjustment is None:
+            raise AppError(404, "CREDIT_ADJUSTMENT_NOT_FOUND", "Credit adjustment was not found")
+        if adjustment.status != "pending":
+            raise AppError(409, "CREDIT_ADJUSTMENT_ALREADY_DECIDED", "Credit adjustment is no longer pending")
+        if adjustment.requested_by_user_id == current.id:
+            raise AppError(409, "DUAL_CONTROL_SELF_DECISION_FORBIDDEN", "Requester cannot decide their own adjustment")
+        adjustment.approved_by_user_id = current.id
+        adjustment.decision_reason = payload.reason
+        adjustment.status = "rejected"
+        adjustment.decided_at = _utcnow()
+        self._complete_command(command, "credit_adjustment", adjustment.id, {"id": adjustment.id})
+        self.db.commit()
+        self.db.refresh(adjustment)
+        return self.adjustment_view(adjustment)
+
+    def _apply_credit_adjustment(
+        self,
+        actor_user_id: str,
+        payload: CreditAdjustmentRequest,
+        ledger_idempotency_key: str,
+    ) -> CreditLedgerEntry:
+        account = self._account(payload.user_id, lock=True)
+        existing = self.db.scalar(
+            select(CreditLedgerEntry).where(
+                CreditLedgerEntry.account_id == account.id,
+                CreditLedgerEntry.idempotency_key == ledger_idempotency_key,
+            )
+        )
+        if existing is not None:
+            return existing
         bucket = None
         if payload.amount > 0:
-            bucket = CreditBucket(account_id=account.id, bucket_type="adjustment", source_reference="adjustment:" + (idempotency_key or hashlib.sha256((current.id + payload.reason + str(_utcnow())).encode()).hexdigest()), granted=payload.amount, available=payload.amount, reserved=0)
+            bucket = CreditBucket(account_id=account.id, bucket_type="adjustment", source_reference=ledger_idempotency_key, granted=payload.amount, available=payload.amount, reserved=0)
             self.db.add(bucket)
             self.db.flush()
         else:
@@ -659,10 +798,32 @@ class ProductBillingService:
                 if needed == 0:
                     break
             self.db.flush()
-        entry = self._ledger(account, payload.amount, "ADJUSTMENT", "Administrative credit adjustment", "admin_adjustment", payload.reference, "adjustment:" + idempotency_key if idempotency_key else None, bucket_id=bucket.id if bucket else None, actor_user_id=current.id, reason=payload.reason)
-        self.db.commit()
-        self.db.refresh(entry)
-        return entry
+        return self._ledger(account, payload.amount, "ADJUSTMENT", "Administrative credit adjustment", "admin_adjustment", payload.reference, ledger_idempotency_key, bucket_id=bucket.id if bucket else None, actor_user_id=actor_user_id, reason=payload.reason)
+
+    def adjustment_view(self, adjustment: CreditAdjustmentApproval | None) -> CreditAdjustmentView:
+        if adjustment is None:
+            raise AppError(404, "CREDIT_ADJUSTMENT_NOT_FOUND", "Credit adjustment was not found")
+        entry = self.db.get(CreditLedgerEntry, adjustment.ledger_entry_id) if adjustment.ledger_entry_id else None
+        ledger_view = None
+        if entry is not None:
+            ledger_view = CreditLedgerEntryView.model_validate({column: getattr(entry, column) for column in ("id", "bucket_id", "amount", "entry_type", "balance_after", "description", "reference_type", "reference_id", "occurred_at")})
+        return CreditAdjustmentView(
+            id=adjustment.id,
+            target_user_id=adjustment.target_user_id,
+            amount=adjustment.amount,
+            reason=adjustment.reason,
+            reference=adjustment.reference,
+            status=adjustment.status,
+            dual_control_required=adjustment.dual_control_required,
+            policy_threshold=adjustment.policy_threshold,
+            requested_by_user_id=adjustment.requested_by_user_id,
+            approved_by_user_id=adjustment.approved_by_user_id,
+            decision_reason=adjustment.decision_reason,
+            ledger_entry=ledger_view,
+            created_at=adjustment.created_at,
+            decided_at=adjustment.decided_at,
+            executed_at=adjustment.executed_at,
+        )
 
     @staticmethod
     def catalog_version_view(catalog: BillingCatalogVersion) -> BillingCatalogVersionView:
