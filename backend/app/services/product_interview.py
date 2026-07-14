@@ -10,6 +10,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.errors import AppError
 from app.core.idempotency import IdempotencyService
 from app.core.identity_security import ProductCurrentUser
@@ -127,16 +128,6 @@ class ProductInterviewService:
         )
         self.db.add(interview)
         self.db.flush()
-        from app.services.product_billing import ProductBillingService
-
-        reservation = ProductBillingService(self.db).reserve(
-            current,
-            "interview",
-            "interview",
-            interview.id,
-            duration_minutes=payload.duration_minutes,
-        )
-        interview.credit_reservation_id = reservation.id if reservation else None
         idempotency.complete(
             result.record,
             resource_type="interview",
@@ -180,8 +171,13 @@ class ProductInterviewService:
         base_url: str,
     ) -> RealtimeTokenView:
         IdentityService(self.db).require_consent(current.id)
-        interview = self.get(current, interview_id)
-        if self._reconnect_expired(interview, _utcnow()):
+        interview = self.db.scalar(
+            select(ProductInterview).where(ProductInterview.id == interview_id).with_for_update()
+        )
+        if interview is None or (current.role != "admin" and interview.user_id != current.id):
+            raise AppError(404, "INTERVIEW_NOT_FOUND", "Interview was not found")
+        now = _utcnow()
+        if self._reconnect_expired(interview, now):
             raise AppError(409, "INTERVIEW_RECONNECT_EXPIRED", "Interview reconnect window has expired")
         if self._duration_reached(interview):
             raise AppError(409, "INTERVIEW_DURATION_REACHED", "Interview duration limit has been reached")
@@ -194,15 +190,53 @@ class ProductInterviewService:
             )
         raw_token = secrets.token_urlsafe(32)
         ttl = min(max(int(os.getenv("INTERVIEW_TOKEN_TTL_SECONDS", "60")), 30), 300)
-        expires_at = _utcnow() + timedelta(seconds=ttl)
-        self.db.add(
-            InterviewRealtimeToken(
-                interview_id=interview.id,
-                user_id=current.id,
-                token_hash=hashlib.sha256(raw_token.encode()).hexdigest(),
-                expires_at=expires_at,
+        expires_at = now + timedelta(seconds=ttl)
+        active_tokens = list(
+            self.db.scalars(
+                select(InterviewRealtimeToken).where(
+                    InterviewRealtimeToken.interview_id == interview.id,
+                    InterviewRealtimeToken.consumed_at.is_(None),
+                    InterviewRealtimeToken.revoked_at.is_(None),
+                    InterviewRealtimeToken.expires_at > now,
+                )
             )
         )
+        for active_token in active_tokens:
+            active_token.revoked_at = now
+        token = InterviewRealtimeToken(
+            interview_id=interview.id,
+            user_id=current.id,
+            token_hash=hashlib.sha256(raw_token.encode()).hexdigest(),
+            expires_at=expires_at,
+        )
+        self.db.add(token)
+        self.db.flush()
+
+        from app.models.product_billing import CreditReservation
+        from app.services.product_billing import ProductBillingService
+
+        reservation = self.db.get(CreditReservation, interview.credit_reservation_id) if interview.credit_reservation_id else None
+        if reservation is None or reservation.status not in {"reserved", "captured", "refunded"}:
+            reservation = ProductBillingService(self.db).reserve(
+                current,
+                "interview",
+                "interview_token",
+                token.id,
+                duration_minutes=interview.duration_minutes,
+                expires_at=expires_at + timedelta(minutes=5),
+            )
+            interview.credit_reservation_id = reservation.id if reservation else None
+        elif reservation.status == "reserved" and reservation.expires_at <= now:
+            ProductBillingService(self.db).release(reservation.id, "realtime_token_expired")
+            reservation = ProductBillingService(self.db).reserve(
+                current,
+                "interview",
+                "interview_token",
+                token.id,
+                duration_minutes=interview.duration_minutes,
+                expires_at=expires_at + timedelta(minutes=5),
+            )
+            interview.credit_reservation_id = reservation.id if reservation else None
         self.db.commit()
         websocket_base = base_url.replace("https://", "wss://").replace("http://", "ws://").rstrip("/")
         return RealtimeTokenView(
@@ -238,6 +272,19 @@ class ProductInterviewService:
         interview.status = "live"
         interview.started_at = interview.started_at or now
         interview.reconnect_until = None
+        if interview.credit_reservation_id:
+            from app.models.product_billing import CreditReservation
+
+            reservation = self.db.scalar(
+                select(CreditReservation)
+                .where(CreditReservation.id == interview.credit_reservation_id)
+                .with_for_update()
+            )
+            if reservation is not None and reservation.status == "reserved":
+                reservation.expires_at = now + timedelta(
+                    minutes=interview.duration_minutes,
+                    seconds=get_settings().gemini_live_reconnect_window_seconds + 300,
+                )
         self.db.commit()
         self.db.refresh(interview)
         return interview
@@ -319,6 +366,22 @@ class ProductInterviewService:
         self.db.refresh(event)
         setattr(event, "_deduplicated", False)
         return event
+
+    def mark_billable_started(self, interview_id: str, event_id: str) -> ProductInterview:
+        interview = self.db.scalar(
+            select(ProductInterview).where(ProductInterview.id == interview_id).with_for_update()
+        )
+        if interview is None:
+            raise AppError(404, "INTERVIEW_NOT_FOUND", "Interview was not found")
+        if interview.billable_started_at is None:
+            interview.billable_started_at = _utcnow()
+            interview.billable_event_id = event_id
+            from app.services.product_billing import ProductBillingService
+
+            ProductBillingService(self.db).capture(interview.credit_reservation_id)
+            self.db.commit()
+            self.db.refresh(interview)
+        return interview
 
     def end_realtime(self, interview_id: str) -> ProductInterview:
         interview = self.db.get(ProductInterview, interview_id)
@@ -472,7 +535,10 @@ class ProductInterviewService:
         interview.ended_reason = interview.ended_reason or ended_reason
         from app.services.product_billing import ProductBillingService
 
-        ProductBillingService(self.db).capture(interview.credit_reservation_id)
+        if interview.billable_started_at is not None:
+            ProductBillingService(self.db).capture(interview.credit_reservation_id)
+        else:
+            ProductBillingService(self.db).release(interview.credit_reservation_id, "interview_not_billable")
         idempotency.complete(result.record, resource_type="interview", resource_id=interview.id, response_status=202)
         self.db.commit()
         from app.workers.tasks import evaluate_product_interview_task

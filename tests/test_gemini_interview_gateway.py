@@ -130,6 +130,7 @@ def test_provider_loop_persists_resumption_usage_and_goaway(monkeypatch) -> None
     gateway = GeminiInterviewGateway(settings=_settings())
     recorded = []
     handles = []
+    billable_events = []
 
     def record(_interview_id, _direction, event_type, **_kwargs):
         recorded.append(event_type)
@@ -140,6 +141,11 @@ def test_provider_loop_persists_resumption_usage_and_goaway(monkeypatch) -> None
         ProductInterviewService,
         "update_resumption_handle",
         lambda _service, _interview_id, handle: handles.append(handle),
+    )
+    monkeypatch.setattr(
+        ProductInterviewService,
+        "mark_billable_started",
+        lambda _service, _interview_id, event_id: billable_events.append(event_id),
     )
     state = GeminiConnectionState(connection_id="connection-1")
     client = _ClientSocket()
@@ -168,6 +174,7 @@ def test_provider_loop_persists_resumption_usage_and_goaway(monkeypatch) -> None
     asyncio.run(gateway._provider_loop(client, provider, "interview-1", state))
 
     assert handles == ["new-handle"]
+    assert billable_events == ["event-2"]
     assert state.usage["promptTokenCount"] == 12
     assert state.usage["responseTokenCount"] == 5
     assert {"session.resumption", "generation.complete", "turn.complete", "provider.go_away"}.issubset(recorded)

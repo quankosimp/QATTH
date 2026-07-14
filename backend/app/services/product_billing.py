@@ -234,6 +234,7 @@ class ProductBillingService:
         reference_type: str,
         reference_id: str,
         duration_minutes: int | None = None,
+        expires_at: datetime | None = None,
     ) -> CreditReservation | None:
         self.ensure_signup_trial(current)
         catalog = self.active_catalog()
@@ -269,7 +270,7 @@ class ProductBillingService:
             pricing_snapshot={"feature_key": feature_key, "credit_cost": price.credit_cost, "catalog_version": catalog.version_key, "maximum_duration_minutes": price.maximum_duration_minutes},
             reference_type=reference_type,
             reference_id=reference_id,
-            expires_at=_utcnow() + timedelta(hours=2),
+            expires_at=expires_at or (_utcnow() + timedelta(hours=2)),
         )
         self.db.add(reservation)
         self.db.flush()
@@ -362,11 +363,66 @@ class ProductBillingService:
         return self._ledger(account, reservation.amount, "REFUND", "Feature credit refund", reservation.reference_type, reservation.reference_id, "refund:" + reservation.id, actor_user_id=actor_user_id, reason=reason, metadata={"reservation_id": reservation.id})
 
     def reconcile_expired_reservations(self, limit: int = 100) -> int:
-        reservations = list(self.db.scalars(select(CreditReservation).where(CreditReservation.status == "reserved", CreditReservation.expires_at <= _utcnow()).order_by(CreditReservation.expires_at).limit(limit)))
+        now = _utcnow()
+        reservations = list(
+            self.db.scalars(
+                select(CreditReservation)
+                .where(CreditReservation.status == "reserved", CreditReservation.expires_at <= now)
+                .order_by(CreditReservation.expires_at)
+                .limit(limit)
+                .with_for_update(skip_locked=True)
+            )
+        )
         for reservation in reservations:
-            self.release(reservation.id, "reservation_timeout")
+            action = self._reservation_reconciliation_action(reservation)
+            if action == "capture":
+                self.capture(reservation.id)
+            elif action == "release":
+                self.release(reservation.id, "reservation_timeout")
+            else:
+                reservation.expires_at = now + timedelta(minutes=15)
         self.db.commit()
         return len(reservations)
+
+    def _reservation_reconciliation_action(self, reservation: CreditReservation) -> str:
+        if reservation.reference_type == "cv_analysis":
+            from app.models.product_cv import CvAnalysis
+
+            analysis = self.db.get(CvAnalysis, reservation.reference_id)
+            if analysis is None or analysis.status == "failed":
+                return "release"
+            if analysis.status == "completed":
+                return "capture"
+            if analysis.status in {"queued", "processing"}:
+                analysis.status = "failed"
+                analysis.error = {
+                    "code": "CV_ANALYSIS_TIMEOUT",
+                    "message": "CV analysis exceeded the billing reservation timeout and can be retried.",
+                }
+                analysis.completed_at = _utcnow()
+                return "release"
+            return "defer"
+
+        if reservation.reference_type in {"interview", "interview_token"}:
+            from app.models.product_interview import InterviewRealtimeToken, ProductInterview
+
+            if reservation.reference_type == "interview_token":
+                token = self.db.get(InterviewRealtimeToken, reservation.reference_id)
+                interview = self.db.get(ProductInterview, token.interview_id) if token is not None else None
+            else:
+                interview = self.db.get(ProductInterview, reservation.reference_id)
+            if interview is None:
+                return "release"
+            if interview.billable_started_at is not None:
+                return "capture"
+            if interview.status in {"ready", "cancelled", "timed_out", "evaluating", "completed", "evaluation_failed"}:
+                return "release"
+            if interview.status in {"live", "interrupted", "ending"}:
+                interview.status = "timed_out"
+                interview.ended_at = interview.ended_at or _utcnow()
+                interview.ended_reason = interview.ended_reason or "reservation_timeout"
+                return "release"
+        return "defer"
 
     def create_checkout(self, current: ProductCurrentUser, payload: CreateCheckoutRequest, idempotency_key: str | None) -> RedirectSessionView:
         request_hash = hashlib.sha256(payload.model_dump_json().encode()).hexdigest()

@@ -363,6 +363,7 @@ class GeminiInterviewGateway:
         state: GeminiConnectionState,
     ) -> None:
         provider_sequence = 0
+        billable_marked = False
         async for raw_message in upstream:
             provider_sequence += 1
             payload = self._decode_provider_message(raw_message)
@@ -414,6 +415,10 @@ class GeminiInterviewGateway:
                     provider_event_id=provider_id + ":output",
                 )
                 await websocket.send_json({"type": event.event_type, "payload": {"event_id": event.id, "speaker": "interviewer", "text": output_text}})
+                if not billable_marked:
+                    with SessionLocal() as db:
+                        ProductInterviewService(db).mark_billable_started(interview_id, event.id)
+                    billable_marked = True
             for index, part in enumerate((content.get("modelTurn") or {}).get("parts", [])):
                 inline = part.get("inlineData") or {}
                 if inline.get("data"):
@@ -439,6 +444,10 @@ class GeminiInterviewGateway:
                             },
                         }
                     )
+                    if not billable_marked:
+                        with SessionLocal() as db:
+                            ProductInterviewService(db).mark_billable_started(interview_id, event.id)
+                        billable_marked = True
             if content.get("generationComplete"):
                 event = self._record(
                     interview_id,

@@ -37,6 +37,8 @@ class ProductInterview(Base):
     gemini_model = Column(String(160), nullable=False)
     gemini_resumption_handle = Column(Text, nullable=True)
     credit_reservation_id = Column(String(36), nullable=True)
+    billable_started_at = Column(DateTime(timezone=True), nullable=True)
+    billable_event_id = Column(String(36), nullable=True)
     failure = Column(JSON, nullable=True)
     ended_reason = Column(String(40), nullable=True)
     started_at = Column(DateTime(timezone=True), nullable=True)

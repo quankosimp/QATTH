@@ -186,6 +186,8 @@ Trong một PostgreSQL transaction:
 
 Cùng <code>Idempotency-Key</code> và request hash trả lại reservation/resource cũ. Cùng key khác request hash trả conflict.
 
+Interview plan creation không giữ credit. Credit chỉ được reserve trong cùng transaction cấp realtime token ngay trước provider session. Token mới revoke token chưa dùng cũ; reservation được gia hạn atomically khi token được consume. Token hết hạn chưa dùng có thể release rồi reserve lại bằng token mới mà không tạo session miễn phí hoặc double-reserve.
+
 ### 6.2 Settle
 
 - CV analysis settle 10 credits khi structured result được persist thành công.
@@ -201,7 +203,7 @@ Cùng <code>Idempotency-Key</code> và request hash trả lại reservation/reso
 - Validation failure trước provider call không tạo reservation.
 - Queue enqueue failure sau commit được outbox publisher retry; không release chỉ vì một lần publish thất bại.
 - Terminal worker/provider failure trước billable point release đúng allocation gốc.
-- Reservation quá hạn được reconciliation worker kiểm tra business/provider outcome trước settle hoặc release.
+- Reservation quá hạn được reconciliation worker lock theo batch và kiểm tra business outcome: CV có structured result hoặc interview đã qua billable point thì settle; terminal/timeout trước billable point thì release; trạng thái chưa kết luận được được gia hạn để kiểm tra lại.
 - Retry không tạo ledger row mới nhờ unique business reference và idempotency key.
 - Release giữ nguyên expiry gốc; bucket đã hết hạn trong lúc action chạy được release rồi settle expiry trong cùng reconciliation transaction.
 
