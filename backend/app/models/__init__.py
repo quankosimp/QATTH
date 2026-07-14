@@ -80,3 +80,11 @@ from backend.app.models.product_privacy import (
     PrivacyEvent,
     PrivacyRequest,
 )
+
+from backend.app.models.product_admin_ops import (
+    AuditChainHead,
+    ModelConfiguration,
+    OperationalJob,
+    PrivilegedAuditEvent,
+    PrivilegedCommand,
+)

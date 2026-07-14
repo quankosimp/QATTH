@@ -62,7 +62,10 @@ class ProductInterviewService:
         )
         if version is None:
             raise AppError(404, "CV_VERSION_NOT_FOUND", "CV version was not found")
-        gemini_model = os.getenv("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview")
+        from backend.app.services.runtime_configuration import runtime_model_configuration
+
+        runtime = runtime_model_configuration("interview_live", "gemini", os.getenv("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview"))
+        gemini_model = runtime["model"]
         interview = ProductInterview(
             user_id=current.id,
             cv_version_id=version.id,
@@ -79,9 +82,9 @@ class ProductInterviewService:
                 "content": version.content,
             },
             job_snapshot={"job_id": payload.job_id, "status": "pending_resolution"} if payload.job_id else None,
-            plan_snapshot=self._plan(payload),
+            plan_snapshot={**self._plan(payload), "instruction_prefix": runtime["configuration"].get("instruction_prefix")},
             rubric_version=os.getenv("INTERVIEW_RUBRIC_VERSION", "interview-v1"),
-            prompt_version=os.getenv("INTERVIEW_PROMPT_VERSION", "interview-v1"),
+            prompt_version=runtime["version"] if runtime["version"] != "environment" else os.getenv("INTERVIEW_PROMPT_VERSION", "interview-v1"),
             gemini_model=gemini_model,
         )
         self.db.add(interview)
@@ -293,6 +296,13 @@ class ProductInterviewService:
         transcript_version = self.db.scalar(
             select(func.max(ProductInterviewEvent.sequence)).where(ProductInterviewEvent.interview_id == interview.id)
         ) or 0
+        from backend.app.services.runtime_configuration import runtime_model_configuration
+
+        evaluation_runtime = runtime_model_configuration(
+            "interview_evaluation",
+            "openai",
+            os.getenv("OPENAI_INTERVIEW_MODEL", os.getenv("OPENAI_CV_MODEL", "gpt-4.1-mini")),
+        )
         report = self.db.scalar(
             select(ProductInterviewReport).where(
                 ProductInterviewReport.interview_id == interview.id,
@@ -305,8 +315,8 @@ class ProductInterviewService:
                 user_id=current.id,
                 status="processing",
                 rubric_version=interview.rubric_version,
-                prompt_version=interview.prompt_version,
-                model=os.getenv("OPENAI_INTERVIEW_MODEL", os.getenv("OPENAI_CV_MODEL", "gpt-4.1-mini")),
+                prompt_version=evaluation_runtime["version"] if evaluation_runtime["version"] != "environment" else interview.prompt_version,
+                model=evaluation_runtime["model"],
                 transcript_version=transcript_version,
             )
             self.db.add(report)

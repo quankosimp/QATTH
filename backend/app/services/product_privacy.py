@@ -309,6 +309,8 @@ class ProductPrivacyService:
             "product_billing_subscriptions", "product_billing_checkout_sessions", "product_billing_commands",
             "product_payment_event_inbox", "product_privacy_requests", "product_privacy_artifacts",
             "product_privacy_dispatches", "product_privacy_events", "product_deletion_tombstones",
+            "product_model_configurations", "product_operational_jobs", "product_privileged_commands",
+            "product_privileged_audit_events", "product_audit_chain_heads",
         }
         metadata = Base.metadata
         manifest: dict[str, int] = {}

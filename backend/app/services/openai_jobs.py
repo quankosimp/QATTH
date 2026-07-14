@@ -12,10 +12,15 @@ from backend.app.core.errors import AppError
 
 class OpenAIJobsAdapter:
     def __init__(self) -> None:
+        from backend.app.services.runtime_configuration import runtime_model_configuration
+
         self.api_key = os.getenv("OPENAI_API_KEY", "")
         self.base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-        self.search_model = os.getenv("OPENAI_JOB_SEARCH_MODEL", "gpt-4.1-mini")
-        self.embedding_model = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
+        search_runtime = runtime_model_configuration("job_search", "openai", os.getenv("OPENAI_JOB_SEARCH_MODEL", "gpt-4.1-mini"))
+        embedding_runtime = runtime_model_configuration("job_embedding", "openai", os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"))
+        self.search_model = search_runtime["model"]
+        self.search_configuration = search_runtime["configuration"]
+        self.embedding_model = embedding_runtime["model"]
         self.timeout = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "120"))
 
     def live_search(self, query: str, filters: dict[str, Any], maximum_results: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -53,6 +58,8 @@ class OpenAIJobsAdapter:
             "not search result pages. Do not invent salary, requirements, or URLs. Return only jobs supported by cited web sources. "
             "Query: " + query + ". Filters: " + json.dumps(filters, ensure_ascii=False)
         )
+        if self.search_configuration.get("instruction_prefix"):
+            prompt = str(self.search_configuration["instruction_prefix"]) + "\n" + prompt
         raw = self._responses(
             {
                 "model": self.search_model,

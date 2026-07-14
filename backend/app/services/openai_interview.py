@@ -26,8 +26,12 @@ class InterviewEvaluationOutput(BaseModel):
 
 class OpenAIInterviewEvaluator:
     def __init__(self) -> None:
+        from backend.app.services.runtime_configuration import runtime_model_configuration
+
         self.api_key = os.getenv("OPENAI_API_KEY", "")
-        self.model = os.getenv("OPENAI_INTERVIEW_MODEL", os.getenv("OPENAI_CV_MODEL", "gpt-4.1-mini"))
+        fallback_model = os.getenv("OPENAI_INTERVIEW_MODEL", os.getenv("OPENAI_CV_MODEL", "gpt-4.1-mini"))
+        self.runtime = runtime_model_configuration("interview_evaluation", "openai", fallback_model)
+        self.model = self.runtime["model"]
         self.base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
         self.timeout = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "120"))
 
@@ -53,6 +57,8 @@ class OpenAIInterviewEvaluator:
                 separators=(",", ":"),
             )
         )
+        if self.runtime["configuration"].get("instruction_prefix"):
+            instruction = str(self.runtime["configuration"]["instruction_prefix"]) + "\n" + instruction
         body = {
             "model": self.model,
             "store": False,

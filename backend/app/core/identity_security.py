@@ -289,3 +289,16 @@ def require_product_admin(current: ProductCurrentUser = Depends(get_product_user
     if current.role != "admin" and "admin" not in current.scopes:
         raise AppError(403, "FORBIDDEN", "Administrator access is required")
     return current
+
+
+def require_product_scopes(*required_scopes: str):
+    required = frozenset(required_scopes)
+
+    def dependency(current: ProductCurrentUser = Depends(get_product_user)) -> ProductCurrentUser:
+        if "local:all" in current.scopes or "admin" in current.scopes:
+            return current
+        if not required.issubset(current.scopes):
+            raise AppError(403, "FORBIDDEN", "Required authorization scope is missing", details={"required_scopes": sorted(required)})
+        return current
+
+    return dependency

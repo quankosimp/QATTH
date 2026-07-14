@@ -192,6 +192,8 @@ class GeminiInterviewGateway:
             + ". CV snapshot: "
             + json.dumps(interview.cv_snapshot, ensure_ascii=False)
         )
+        if interview.plan_snapshot.get("instruction_prefix"):
+            instruction = str(interview.plan_snapshot["instruction_prefix"]) + "\n" + instruction
         setup: dict[str, Any] = {
             "model": model,
             "generationConfig": {
