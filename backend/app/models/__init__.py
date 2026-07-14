@@ -24,3 +24,11 @@ from backend.app.models.product_cv import (
     ProductCvVersion,
     ProductFileAsset,
 )
+
+from backend.app.models.product_interview import (
+    InterviewFeedback,
+    InterviewRealtimeToken,
+    ProductInterview,
+    ProductInterviewEvent,
+    ProductInterviewReport,
+)

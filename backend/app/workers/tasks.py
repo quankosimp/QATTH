@@ -124,3 +124,87 @@ def analyze_product_cv_task(analysis_id: str) -> dict:
         raise
     finally:
         db.close()
+
+
+@celery_app.task(name="product.interview.evaluate", acks_late=True)
+def evaluate_product_interview_task(report_id: str) -> dict:
+    from app.models.product_interview import ProductInterview, ProductInterviewEvent, ProductInterviewReport
+    from app.services.openai_interview import OpenAIInterviewEvaluator
+
+    db = SessionLocal()
+    try:
+        report = db.scalar(
+            select(ProductInterviewReport).where(ProductInterviewReport.id == report_id).with_for_update()
+        )
+        if report is None:
+            return {"status": "missing", "report_id": report_id}
+        if report.status == "ready":
+            return {"status": "ready", "report_id": report_id}
+        report.status = "processing"
+        report.error = None
+        db.commit()
+        interview = db.get(ProductInterview, report.interview_id)
+        if interview is None:
+            raise RuntimeError("Interview was not found")
+        events = list(
+            db.scalars(
+                select(ProductInterviewEvent)
+                .where(
+                    ProductInterviewEvent.interview_id == interview.id,
+                    ProductInterviewEvent.sequence <= report.transcript_version,
+                    ProductInterviewEvent.text.is_not(None),
+                )
+                .order_by(ProductInterviewEvent.sequence)
+            )
+        )
+        transcript = [
+            {
+                "event_id": event.id,
+                "sequence": event.sequence,
+                "speaker": event.speaker,
+                "text": event.text,
+            }
+            for event in events
+        ]
+        output, provider = OpenAIInterviewEvaluator().evaluate(
+            transcript,
+            interview.cv_snapshot,
+            interview.plan_snapshot,
+            report.rubric_version,
+        )
+        known_event_ids = {event.id for event in events}
+        for finding in [*output.strengths, *output.gaps]:
+            if not finding.evidence_event_ids or not set(finding.evidence_event_ids).issubset(known_event_ids):
+                raise RuntimeError("Evaluation references unknown transcript evidence")
+        report.scores = {
+            "technical_depth": output.technical_depth,
+            "communication": output.communication,
+            "problem_solving": output.problem_solving,
+            "evidence_quality": output.evidence_quality,
+            "role_fit": output.role_fit,
+        }
+        report.strengths = [item.model_dump(mode="json") for item in output.strengths]
+        report.gaps = [item.model_dump(mode="json") for item in output.gaps]
+        report.actions = output.actions
+        report.disclaimer = "AI-generated coaching feedback. It is not a hiring decision or guarantee of job fit."
+        report.provider_run_id = provider.get("provider_run_id")
+        report.status = "ready"
+        report.completed_at = datetime.now(UTC)
+        interview.status = "completed"
+        interview.ended_at = interview.ended_at or datetime.now(UTC)
+        db.commit()
+        return {"status": "ready", "report_id": report_id}
+    except Exception as exc:
+        db.rollback()
+        report = db.get(ProductInterviewReport, report_id)
+        if report is not None:
+            report.status = "failed"
+            report.error = {"code": "INTERVIEW_EVALUATION_FAILED", "message": str(exc)[:1000]}
+            interview = db.get(ProductInterview, report.interview_id)
+            if interview is not None:
+                interview.status = "evaluation_failed"
+                interview.failure = report.error
+            db.commit()
+        raise
+    finally:
+        db.close()
