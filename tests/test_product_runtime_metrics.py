@@ -15,6 +15,7 @@ def test_runtime_collector_exposes_required_operational_dimensions() -> None:
             "interviews": {"live": 4, "interrupted": 1},
             "jobs": {"active": 20, "stale": 5},
             "oldest_active_job_age": 90.0,
+            "privacy_retention": (2, 45.0),
         }
     )
 
@@ -30,6 +31,8 @@ def test_runtime_collector_exposes_required_operational_dimensions() -> None:
         "qatth_interview_active",
         "qatth_job_catalog",
         "qatth_job_oldest_active_age_seconds",
+        "qatth_privacy_expired_artifacts",
+        "qatth_privacy_expired_artifact_oldest_age_seconds",
     }.issubset(families)
     assert families["qatth_queue_projected_depth"].samples[0].value == 3
     assert families["qatth_interview_active"].samples[0].labels["status"] == "live"

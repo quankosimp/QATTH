@@ -499,7 +499,7 @@ def cleanup_product_privacy_artifacts_task() -> dict:
 
     db = SessionLocal()
     try:
-        deleted = ProductPrivacyService(db).cleanup_expired_artifacts()
-        return {"status": "completed", "artifacts_deleted": deleted}
+        result = ProductPrivacyService(db).cleanup_expired_artifacts()
+        return {"status": "completed", **result}
     finally:
         db.close()

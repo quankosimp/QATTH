@@ -104,6 +104,7 @@ class ProductPrivacyService:
                 expires_at = _utcnow() + timedelta(seconds=max(ttl, 1))
                 artifact.download_token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
                 artifact.download_token_expires_at = expires_at
+                self._append_event(request.id, "download_token.issued", {"expires_at": expires_at.isoformat()})
                 self.db.commit()
                 origin = str(get_settings().public_api_origin).rstrip("/")
                 prefix = str(get_settings().api_v1_prefix).rstrip("/")
@@ -123,9 +124,12 @@ class ProductPrivacyService:
         nonce = encrypted[16:28]
         ciphertext = encrypted[28:]
         try:
-            return AESGCM(self._encryption_key()).decrypt(nonce, ciphertext, request_id.encode())
+            archive = AESGCM(self._encryption_key()).decrypt(nonce, ciphertext, request_id.encode())
         except Exception as exc:
             raise AppError(409, "PRIVACY_EXPORT_DECRYPTION_FAILED", "Privacy export could not be decrypted") from exc
+        self._append_event(request_id, "artifact.downloaded", {})
+        self.db.commit()
+        return archive
 
     def publish_dispatch(self, request_id: str) -> bool:
         dispatch = self.db.scalar(select(PrivacyDispatch).where(PrivacyDispatch.request_id == request_id).with_for_update())
@@ -378,15 +382,24 @@ class ProductPrivacyService:
             if str(settings.app_env).lower() in {"staging", "production"}:
                 raise AppError(503, "PRIVACY_CACHE_PURGE_FAILED", "Privacy cache purge did not complete", retryable=True) from exc
 
-    def cleanup_expired_artifacts(self, limit: int = 100) -> int:
+    def cleanup_expired_artifacts(self, limit: int = 100) -> dict[str, int]:
         artifacts = list(self.db.scalars(select(PrivacyArtifact).where(PrivacyArtifact.deleted_at.is_(None), PrivacyArtifact.expires_at <= _utcnow()).order_by(PrivacyArtifact.expires_at).limit(limit)))
+        deleted = 0
+        failed = 0
         for artifact in artifacts:
-            self.storage.delete(artifact.object_key)
+            try:
+                self.storage.delete(artifact.object_key)
+            except Exception:
+                failed += 1
+                self._append_event(artifact.request_id, "artifact.cleanup_failed", {"code": "OBJECT_STORAGE_DELETE_FAILED"})
+                continue
             artifact.deleted_at = _utcnow()
             artifact.download_token_hash = None
             artifact.download_token_expires_at = None
+            deleted += 1
+            self._append_event(artifact.request_id, "artifact.cleaned_up", {})
         self.db.commit()
-        return len(artifacts)
+        return {"artifacts_deleted": deleted, "artifacts_failed": failed}
 
     def _checkpoint(self, request: PrivacyRequest, name: str) -> None:
         checkpoints = dict(request.checkpoints or {})

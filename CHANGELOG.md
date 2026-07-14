@@ -34,6 +34,7 @@ Tất cả thay đổi đáng chú ý của QATTH được ghi lại trong file 
 - Production readiness now rejects incompatible database revisions and unavailable Redis, queue, private object storage or malware-scanner dependencies; startup also enforces the schema revision gate.
 - Admin background-job retry now commits an idempotent command, audit event, retry job and dispatch before broker publication; a periodic publisher recovers broker failures without duplicating the retry command.
 - Prometheus runtime metrics now cover SQLAlchemy pool state, projected queue depth/age, transactional dispatch backlog, active interview concurrency and job catalog freshness with fail-safe collection.
+- Privacy export token issuance/download and artifact retention are audited; cleanup isolates object failures for retry, exposes backlog metrics and stores events behind DB immutability triggers.
 - Interview credits are reserved at realtime token issuance and captured only after the first successful Gemini output delivery; timeout reconciliation now follows CV/interview outcomes.
 - Client checkout redirect URLs are retained only by QATTH and are no longer copied into provider metadata.
 - Payment reversal dùng provider transaction reference, hỗ trợ partial reversal và chỉ đưa account vào review khi phát sinh debt.

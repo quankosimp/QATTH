@@ -13,7 +13,7 @@ from app.models.foundation import OutboxEvent
 from app.models.product_admin_ops import OperationalJob, OperationalJobDispatch
 from app.models.product_interview import ProductInterview
 from app.models.product_jobs import JobSearchDispatch, ProductJob
-from app.models.product_privacy import PrivacyDispatch
+from app.models.product_privacy import PrivacyArtifact, PrivacyDispatch
 from app.models.product_recommendations import RecommendationDispatch
 
 
@@ -63,6 +63,12 @@ def _runtime_snapshot() -> dict[str, Any]:
         for status, count in db.execute(select(ProductJob.status, func.count()).group_by(ProductJob.status)):
             job_counts[str(status)] = int(count)
         oldest_active = db.scalar(select(func.min(ProductJob.last_seen_at)).where(ProductJob.status == "active"))
+        expired_artifacts, oldest_expiry = db.execute(
+            select(func.count(), func.min(PrivacyArtifact.expires_at)).where(
+                PrivacyArtifact.deleted_at.is_(None),
+                PrivacyArtifact.expires_at <= now,
+            )
+        ).one()
 
     return {
         "queues": queues,
@@ -70,6 +76,7 @@ def _runtime_snapshot() -> dict[str, Any]:
         "interviews": interview_counts,
         "jobs": job_counts,
         "oldest_active_job_age": _age_seconds(now, oldest_active),
+        "privacy_retention": (int(expired_artifacts), _age_seconds(now, oldest_expiry)),
     }
 
 
@@ -98,6 +105,7 @@ class ProductRuntimeCollector:
                 "interviews": {"live": 0, "interrupted": 0},
                 "jobs": {},
                 "oldest_active_job_age": 0.0,
+                "privacy_retention": (0, 0.0),
             }
             scrape_success = 0.0
 
@@ -144,6 +152,14 @@ class ProductRuntimeCollector:
         job_age = GaugeMetricFamily("qatth_job_oldest_active_age_seconds", "Age since the least recently seen active posting.")
         job_age.add_metric([], snapshot["oldest_active_job_age"])
         yield job_age
+
+        expired_count, expired_age = snapshot.get("privacy_retention", (0, 0.0))
+        privacy_count = GaugeMetricFamily("qatth_privacy_expired_artifacts", "Expired privacy artifacts awaiting deletion.")
+        privacy_count.add_metric([], expired_count)
+        yield privacy_count
+        privacy_age = GaugeMetricFamily("qatth_privacy_expired_artifact_oldest_age_seconds", "Age past expiry of the oldest privacy artifact awaiting deletion.")
+        privacy_age.add_metric([], expired_age)
+        yield privacy_age
 
 
 _registration_lock = threading.Lock()
