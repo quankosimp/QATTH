@@ -30,6 +30,7 @@ celery_app.conf.update(
         "publish-job-search-dispatches": {"task": "product.jobs.publish_dispatches", "schedule": 30.0},
         "publish-recommendation-dispatches": {"task": "product.recommendations.publish_dispatches", "schedule": 30.0},
         "publish-privacy-dispatches": {"task": "product.privacy.publish_dispatches", "schedule": 30.0},
+        "publish-product-task-dispatches": {"task": "product.tasks.publish_dispatches", "schedule": 30.0},
         "reconcile-credit-reservations": {"task": "product.billing.reconcile_reservations", "schedule": 300.0},
         "reconcile-payment-provider": {"task": "product.billing.reconcile_payments", "schedule": 900.0},
         "cleanup-payment-payloads": {"task": "product.billing.cleanup_payment_payloads", "schedule": 3600.0},

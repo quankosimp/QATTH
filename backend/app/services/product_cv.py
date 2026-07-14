@@ -27,6 +27,7 @@ from app.schemas.product_cv import (
 )
 from app.services.product_files import ProductFileService
 from app.services.identity import IdentityService
+from app.services.task_dispatch import ProductTaskDispatchService
 
 
 def _utcnow() -> datetime:
@@ -92,6 +93,7 @@ class ProductCvService:
         )
         self.db.add(scan)
         self.db.flush()
+        ProductTaskDispatchService(self.db).enqueue("product.cv.extract", "cv_scan", scan.id)
         idempotency.complete(result.record, resource_type="cv_scan", resource_id=scan.id, response_status=202)
         self.db.commit()
         self.db.refresh(scan)
@@ -129,6 +131,7 @@ class ProductCvService:
         )
         self.db.add(scan)
         self.db.flush()
+        ProductTaskDispatchService(self.db).enqueue("product.cv.extract", "cv_scan", scan.id)
         idempotency.complete(result.record, resource_type="cv_scan", resource_id=scan.id, response_status=202)
         self.db.commit()
         self.db.refresh(scan)
@@ -136,12 +139,7 @@ class ProductCvService:
         return scan
 
     def _dispatch_scan(self, scan: CvScan) -> None:
-        from app.workers.tasks import extract_product_cv_task
-
-        result = extract_product_cv_task.delay(scan.id)
-        scan.provider_run_id = result.id
-        self.db.commit()
-        self.db.refresh(scan)
+        ProductTaskDispatchService(self.db).publish_resource("product.cv.extract", scan.id)
 
     def get_scan(self, current: ProductCurrentUser, scan_id: str) -> CvScan:
         scan = self.db.get(CvScan, scan_id)
@@ -412,6 +410,7 @@ class ProductCvService:
 
         reservation = ProductBillingService(self.db).reserve(current, "cv_analysis", "cv_analysis", analysis.id)
         analysis.credit_reservation_id = reservation.id if reservation else None
+        ProductTaskDispatchService(self.db).enqueue("product.cv.analyze", "cv_analysis", analysis.id)
         idempotency.complete(result.record, resource_type="cv_analysis", resource_id=analysis.id, response_status=202)
         self.db.commit()
         self.db.refresh(analysis)
@@ -456,6 +455,7 @@ class ProductCvService:
 
         reservation = ProductBillingService(self.db).reserve(current, "cv_analysis", "cv_analysis", analysis.id)
         analysis.credit_reservation_id = reservation.id if reservation else None
+        ProductTaskDispatchService(self.db).enqueue("product.cv.analyze", "cv_analysis", analysis.id)
         idempotency.complete(result.record, resource_type="cv_analysis", resource_id=analysis.id, response_status=202)
         self.db.commit()
         self.db.refresh(analysis)
@@ -463,12 +463,7 @@ class ProductCvService:
         return analysis
 
     def _dispatch_analysis(self, analysis: CvAnalysis) -> None:
-        from app.workers.tasks import analyze_product_cv_task
-
-        result = analyze_product_cv_task.delay(analysis.id)
-        analysis.provider_run_id = result.id
-        self.db.commit()
-        self.db.refresh(analysis)
+        ProductTaskDispatchService(self.db).publish_resource("product.cv.analyze", analysis.id)
 
     def get_analysis(self, current: ProductCurrentUser, analysis_id: str) -> CvAnalysis:
         analysis = self.db.get(CvAnalysis, analysis_id)

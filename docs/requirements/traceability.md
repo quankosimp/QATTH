@@ -35,7 +35,7 @@ Ma trận này nối requirement với API contract, logical entity và automate
 | Requirement IDs | Implementation / evidence location | Status / release evidence required |
 |---|---|---|
 | NFR-AVL-001 | health endpoints and SLO definition | Evidence pending: rolling production availability |
-| NFR-AVL-002..004 | health/readiness, idempotent jobs, provider timeout/retry/circuit/bulkhead | Implemented; <code>test_contract.py</code>, <code>test_provider_resilience.py</code> |
+| NFR-AVL-002..004 | health/readiness, durable deduplicated AI task dispatch, idempotent jobs, provider timeout/retry/circuit/bulkhead | Implemented; <code>test_contract.py</code>, <code>test_durable_task_dispatch.py</code>, <code>test_provider_resilience.py</code> |
 | NFR-AVL-005 | interview reconnect/state boundary and distributed lease | Partial: gateway tests pass; staging WebSocket/Gemini disconnect test required |
 | NFR-PERF-001..008 | [Load Testing](../operations/load-testing.md) and k6 workload | Evidence pending: publish environment, dataset and percentile report |
 | NFR-DATA-001..004 | production handoff backup/restore contract | Evidence pending: managed backup and quarterly restore rehearsal |

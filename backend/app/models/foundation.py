@@ -67,9 +67,15 @@ class OutboxEvent(Base):
     aggregate_type: Mapped[str] = mapped_column(String(80), nullable=False)
     aggregate_id: Mapped[str] = mapped_column(String(80), nullable=False)
     event_type: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
+    deduplication_key: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
     payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     correlation_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    available_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=utc_now,
         nullable=False,

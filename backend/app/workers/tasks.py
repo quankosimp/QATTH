@@ -256,6 +256,18 @@ def expire_timed_out_product_interviews_task() -> dict:
         db.close()
 
 
+@celery_app.task(name="product.tasks.publish_dispatches")
+def publish_product_task_dispatches_task() -> dict:
+    from app.services.task_dispatch import ProductTaskDispatchService
+
+    db = SessionLocal()
+    try:
+        published = ProductTaskDispatchService(db).publish_pending()
+        return {"status": "completed", "dispatches_published": published}
+    finally:
+        db.close()
+
+
 @celery_app.task(name="product.jobs.search", acks_late=True)
 def execute_product_job_search_task(run_id: str) -> dict:
     from app.models.product_jobs import JobSearchRun

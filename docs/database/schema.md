@@ -26,7 +26,7 @@ Không lưu PDF trong PostgreSQL trừ artifact rất nhỏ có lý do được 
 | <code>0007</code>-<code>0014</code> | Identity/profile/consent, Product CV, interview, job search, recommendation, billing, privacy và admin/ops |
 | <code>0015</code>-<code>0019</code> | Identity/file/CV hardening, interview hardening, job search hardening, billing dual-control và provider usage observability |
 | <code>0020</code>-<code>0023</code> | Payment inbox/reconciliation, billable interview boundary, recommendation feedback và auditable ranking v2 |
-| <code>0024</code>-<code>0026</code> | OIDC provider-session identity, catalog schedule invariants và cumulative payment reversal/account review |
+| <code>0024</code>-<code>0027</code> | OIDC provider-session identity, catalog schedule invariants, cumulative payment reversal/account review và durable AI task dispatch |
 
 Migration trong <code>migrations/versions/</code> là lịch sử physical schema bất biến. Bảng/constraint trong tài liệu chưa có revision tương ứng phải được coi là gap và cần migration riêng; không dùng <code>create_all</code> để thay thế migration ở production.
 
@@ -491,7 +491,7 @@ Không lưu prompt chứa PII đầy đủ trong log table nếu artifact policy
 
 ### outbox_events
 
-Append-only: <code>id</code>, aggregate type/ID, event type, payload JSONB, correlation ID, occurred_at, published_at, attempts. Index unpublished occurred_at. Publisher dùng skip locked và idempotent consumer.
+Append-only: <code>id</code>, aggregate type/ID, event type, unique nullable deduplication key, payload JSONB, correlation ID, occurred/available/published timestamps, attempts và safe last error. Publisher định kỳ retry unpublished AI task dispatch với backoff; consumer kiểm tra resource state để chịu at-least-once delivery.
 
 ### idempotency_keys
 

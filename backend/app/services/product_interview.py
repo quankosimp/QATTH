@@ -539,11 +539,13 @@ class ProductInterviewService:
             ProductBillingService(self.db).capture(interview.credit_reservation_id)
         else:
             ProductBillingService(self.db).release(interview.credit_reservation_id, "interview_not_billable")
+        self.db.flush()
+        from app.services.task_dispatch import ProductTaskDispatchService
+
+        ProductTaskDispatchService(self.db).enqueue("product.interview.evaluate", "interview_report", report.id)
         idempotency.complete(result.record, resource_type="interview", resource_id=interview.id, response_status=202)
         self.db.commit()
-        from app.workers.tasks import evaluate_product_interview_task
-
-        evaluate_product_interview_task.delay(report.id)
+        ProductTaskDispatchService(self.db).publish_resource("product.interview.evaluate", report.id)
         self.db.refresh(interview)
         return interview
 
@@ -620,11 +622,12 @@ class ProductInterviewService:
         self.db.flush()
         interview.status = "evaluating"
         interview.failure = None
+        from app.services.task_dispatch import ProductTaskDispatchService
+
+        ProductTaskDispatchService(self.db).enqueue("product.interview.evaluate", "interview_report", report.id)
         idempotency.complete(result.record, resource_type="interview_report", resource_id=report.id, response_status=202)
         self.db.commit()
-        from app.workers.tasks import evaluate_product_interview_task
-
-        evaluate_product_interview_task.delay(report.id)
+        ProductTaskDispatchService(self.db).publish_resource("product.interview.evaluate", report.id)
         self.db.refresh(report)
         return report
 
