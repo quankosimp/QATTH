@@ -212,6 +212,11 @@ class ProductCvService:
             raise AppError(404, "CV_VERSION_NOT_FOUND", "CV version was not found")
         analysis = CvAnalysis(user_id=current.id, cv_version_id=version.id, status="queued")
         self.db.add(analysis)
+        self.db.flush()
+        from backend.app.services.product_billing import ProductBillingService
+
+        reservation = ProductBillingService(self.db).reserve(current, "cv_analysis", "cv_analysis", analysis.id)
+        analysis.credit_reservation_id = reservation.id if reservation else None
         self.db.commit()
         self.db.refresh(analysis)
         from backend.app.workers.tasks import analyze_product_cv_task

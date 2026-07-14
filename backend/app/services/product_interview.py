@@ -85,6 +85,17 @@ class ProductInterviewService:
             gemini_model=gemini_model,
         )
         self.db.add(interview)
+        self.db.flush()
+        from backend.app.services.product_billing import ProductBillingService
+
+        reservation = ProductBillingService(self.db).reserve(
+            current,
+            "interview",
+            "interview",
+            interview.id,
+            duration_minutes=payload.duration_minutes,
+        )
+        interview.credit_reservation_id = reservation.id if reservation else None
         self.db.commit()
         self.db.refresh(interview)
         return interview
@@ -301,6 +312,9 @@ class ProductInterviewService:
             self.db.add(report)
         interview.status = "evaluating"
         interview.ended_at = interview.ended_at or _utcnow()
+        from backend.app.services.product_billing import ProductBillingService
+
+        ProductBillingService(self.db).capture(interview.credit_reservation_id)
         self.db.commit()
         from backend.app.workers.tasks import evaluate_product_interview_task
 
@@ -315,6 +329,9 @@ class ProductInterviewService:
         if interview.status != "cancelled":
             interview.status = "cancelled"
             interview.ended_at = _utcnow()
+            from backend.app.services.product_billing import ProductBillingService
+
+            ProductBillingService(self.db).release(interview.credit_reservation_id, "interview_cancelled")
             self.db.commit()
         return interview
 

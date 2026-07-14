@@ -55,3 +55,20 @@ from backend.app.models.product_recommendations import (
     RecommendationMatch,
     RecommendationRun,
 )
+
+from backend.app.models.product_billing import (
+    BillingCatalogVersion,
+    BillingCheckoutSession,
+    BillingCommand,
+    BillingOffer,
+    BillingSubscription,
+    CreditAccount,
+    CreditBucket,
+    CreditLedgerEntry,
+    CreditReservation,
+    CreditReservationAllocation,
+    FeatureCreditPrice,
+    PaymentEventInbox,
+    SignupTrialGrant,
+    SignupTrialPolicy,
+)

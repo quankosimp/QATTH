@@ -111,6 +111,9 @@ def analyze_product_cv_task(analysis_id: str) -> dict:
         analysis.provider_run_id = provider.get("provider_run_id")
         analysis.status = "completed"
         analysis.completed_at = datetime.now(UTC)
+        from app.services.product_billing import ProductBillingService
+
+        ProductBillingService(db).capture(analysis.credit_reservation_id)
         db.commit()
         return {"status": "completed", "analysis_id": analysis_id}
     except Exception as exc:
@@ -120,6 +123,9 @@ def analyze_product_cv_task(analysis_id: str) -> dict:
             analysis.status = "failed"
             analysis.error = {"code": "CV_ANALYSIS_FAILED", "message": str(exc)[:1000]}
             analysis.completed_at = datetime.now(UTC)
+            from app.services.product_billing import ProductBillingService
+
+            ProductBillingService(db).release(analysis.credit_reservation_id, "cv_analysis_failed")
             db.commit()
         raise
     finally:
@@ -288,5 +294,17 @@ def publish_product_recommendation_dispatches_task() -> dict:
     try:
         published = ProductRecommendationService(db).publish_pending_dispatches()
         return {"status": "completed", "dispatches_published": published}
+    finally:
+        db.close()
+
+
+@celery_app.task(name="product.billing.reconcile_reservations")
+def reconcile_product_credit_reservations_task() -> dict:
+    from app.services.product_billing import ProductBillingService
+
+    db = SessionLocal()
+    try:
+        reconciled = ProductBillingService(db).reconcile_expired_reservations()
+        return {"status": "completed", "reservations_reconciled": reconciled}
     finally:
         db.close()
