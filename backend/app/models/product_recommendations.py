@@ -102,10 +102,12 @@ class RecommendationRun(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key", name="uq_product_recommendation_idempotency"),
         Index("ix_product_recommendation_runs_user_status", "user_id", "status"),
+        Index("ix_product_recommendation_runs_correlation", "correlation_id"),
     )
 
     id = Column(String(36), primary_key=True, default=_uuid)
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    correlation_id = Column(String(128), nullable=False)
     cv_version_id = Column(String(36), ForeignKey("product_cv_versions.id", ondelete="SET NULL"), nullable=True)
     search_run_id = Column(String(36), ForeignKey("product_job_search_runs.id", ondelete="SET NULL"), nullable=True)
     candidate_profile_id = Column(String(36), ForeignKey("product_candidate_profiles.id", ondelete="RESTRICT"), nullable=False)

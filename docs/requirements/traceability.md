@@ -28,7 +28,7 @@ Ma trận này nối requirement với API contract, logical entity và automate
 | FR-BILL-002..003 | checkout/portal, Paddle adapter, webhook inbox, provider reconciliation and payload retention | <code>test_product_billing_contract.py</code>, <code>test_payment_adapter.py</code>, <code>test_payment_reconciliation_contract.py</code> cover mapping, signature/replay, normalization, retry and retention | Implemented in backend; Paddle sandbox certification remains release evidence |
 | FR-PRIV-001..003 | export/deletion/consent workflows; privacy_requests | <code>test_product_privacy_contract.py</code> | Implemented; production retention/backup expiry is NFR evidence |
 | FR-ADMIN-001..005 | resource/user search, model config, background job, source/moderation, credit dual-control | <code>test_product_admin_ops_contract.py</code>, <code>test_product_billing_contract.py</code> | Implemented |
-| FR-OPS-001..003 | health/readiness/diagnostics, correlation, atomic Redis IP/principal/action quotas and AI-cost policy | <code>test_contract.py</code>, <code>test_provider_resilience.py</code>, <code>test_distributed_rate_limit.py</code> | Implemented; multi-instance/load evidence remains an NFR gate |
+| FR-OPS-001..003 | health/readiness/diagnostics, persisted async-run correlation propagated through Celery, atomic Redis IP/principal/action quotas and AI-cost policy | <code>test_contract.py</code>, <code>test_async_run_correlation.py</code>, <code>test_provider_resilience.py</code>, <code>test_distributed_rate_limit.py</code> | Implemented; multi-instance/load evidence remains an NFR gate |
 
 ## 3. Non-functional requirements
 

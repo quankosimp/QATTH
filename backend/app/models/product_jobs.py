@@ -182,10 +182,12 @@ class JobSearchRun(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "idempotency_key", name="uq_product_job_search_idempotency"),
         Index("ix_product_job_search_runs_user_status", "user_id", "status"),
+        Index("ix_product_job_search_runs_correlation", "correlation_id"),
     )
 
     id = Column(String(36), primary_key=True, default=_uuid)
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    correlation_id = Column(String(128), nullable=False)
     status = Column(String(24), nullable=False, default="queued")
     mode = Column(String(16), nullable=False)
     query_text = Column(String(500), nullable=False)

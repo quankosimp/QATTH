@@ -21,10 +21,12 @@ class PrivacyRequest(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "request_type", "idempotency_key", name="uq_product_privacy_request_idempotency"),
         Index("ix_product_privacy_requests_user_status", "user_id", "status"),
+        Index("ix_product_privacy_requests_correlation", "correlation_id"),
     )
 
     id = Column(String(36), primary_key=True, default=_uuid)
     user_id = Column(String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
+    correlation_id = Column(String(128), nullable=False)
     request_type = Column(String(24), nullable=False)
     status = Column(String(32), nullable=False, default="queued")
     idempotency_key = Column(String(255), nullable=False)

@@ -106,8 +106,11 @@ class ProductJobSearchService:
             )
             if version is None:
                 raise AppError(404, "CV_VERSION_NOT_FOUND", "CV version was not found")
+        from app.core.correlation import current_correlation_id
+
         run = JobSearchRun(
             user_id=current.id,
+            correlation_id=current_correlation_id(),
             status="queued",
             mode=payload.mode,
             query_text=payload.query,
@@ -145,7 +148,13 @@ class ProductJobSearchService:
         try:
             from app.workers.tasks import execute_product_job_search_task
 
-            execute_product_job_search_task.delay(run_id)
+            run = self.db.get(JobSearchRun, run_id)
+            from app.core.correlation import current_correlation_id
+
+            execute_product_job_search_task.apply_async(
+                args=[run_id],
+                headers={"request_id": run.correlation_id if run is not None else current_correlation_id()},
+            )
         except Exception as exc:
             from app.core.errors import safe_error_code
 

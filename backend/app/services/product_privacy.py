@@ -75,7 +75,9 @@ class ProductPrivacyService:
             if existing.request_hash != request_hash:
                 raise AppError(409, "IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used with a different request")
             return existing
-        request = PrivacyRequest(user_id=current.id, request_type=request_type, idempotency_key=idempotency_key, request_hash=request_hash, reason=reason, retention_exceptions=self.retention_exceptions if request_type == "deletion" else [], checkpoints={})
+        from app.core.correlation import current_correlation_id
+
+        request = PrivacyRequest(user_id=current.id, correlation_id=current_correlation_id(), request_type=request_type, idempotency_key=idempotency_key, request_hash=request_hash, reason=reason, retention_exceptions=self.retention_exceptions if request_type == "deletion" else [], checkpoints={})
         self.db.add(request)
         self.db.flush()
         self.db.add(PrivacyDispatch(request_id=request.id, payload={"request_id": request.id}))
@@ -133,7 +135,17 @@ class ProductPrivacyService:
         try:
             from app.workers.tasks import execute_product_privacy_request_task
 
-            execute_product_privacy_request_task.delay(request_id)
+            privacy_request = self.db.get(PrivacyRequest, request_id)
+            from app.core.correlation import current_correlation_id
+
+            execute_product_privacy_request_task.apply_async(
+                args=[request_id],
+                headers={
+                    "request_id": privacy_request.correlation_id
+                    if privacy_request is not None
+                    else current_correlation_id()
+                },
+            )
         except Exception as exc:
             from app.core.errors import safe_error_code
 

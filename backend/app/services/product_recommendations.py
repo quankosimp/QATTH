@@ -425,8 +425,11 @@ class ProductRecommendationService:
         cv_version_id = payload.cv_version_id or (search_run.cv_version_id if search_run else None)
         candidate = self._candidate_profile(current, cv_version_id, search_run)
         assignment = {"ranking": "control", "explanation": "evidence-v1"}
+        from app.core.correlation import current_correlation_id
+
         run = RecommendationRun(
             user_id=current.id,
+            correlation_id=current_correlation_id(),
             cv_version_id=cv_version_id,
             search_run_id=search_run.id if search_run else None,
             candidate_profile_id=candidate.id,
@@ -569,7 +572,13 @@ class ProductRecommendationService:
         try:
             from app.workers.tasks import execute_product_recommendation_task
 
-            execute_product_recommendation_task.delay(run_id)
+            run = self.db.get(RecommendationRun, run_id)
+            from app.core.correlation import current_correlation_id
+
+            execute_product_recommendation_task.apply_async(
+                args=[run_id],
+                headers={"request_id": run.correlation_id if run is not None else current_correlation_id()},
+            )
         except Exception as exc:
             from app.core.errors import safe_error_code
 
