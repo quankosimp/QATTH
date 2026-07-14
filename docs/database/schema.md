@@ -86,7 +86,7 @@ Unique <code>(issuer, subject)</code>; index <code>(user_id)</code>.
 
 ### user_sessions
 
-Lưu session/revocation nếu kiến trúc dùng session token nội bộ: <code>id</code>, <code>user_id</code>, hashed token identifier, <code>expires_at</code>, <code>revoked_at</code>, device metadata tối thiểu, timestamps. Không lưu bearer token plaintext.
+Lưu session/revocation: <code>id</code>, <code>user_id</code>, identity ID, hashed token fingerprint, provider session ID nullable, <code>expires_at</code>, <code>revoked_at</code>, device metadata tối thiểu, timestamps. Unique partial <code>(identity_id, provider_session_id)</code> khi provider có <code>sid</code> để token refresh không vượt qua revocation; nếu không có <code>sid</code>, fingerprint là identity của session. Không lưu bearer token plaintext. Account chỉ được auto-link bằng email khi OIDC xác nhận <code>email_verified=true</code>.
 
 ### user_job_preferences
 

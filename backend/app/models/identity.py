@@ -39,6 +39,14 @@ class UserSession(Base):
     __tablename__ = "user_sessions"
     __table_args__ = (
         UniqueConstraint("token_fingerprint", name="uq_user_sessions_token_fingerprint"),
+        Index(
+            "uq_user_sessions_identity_provider_sid",
+            "identity_id",
+            "provider_session_id",
+            unique=True,
+            postgresql_where=Column("provider_session_id").is_not(None),
+            sqlite_where=Column("provider_session_id").is_not(None),
+        ),
         Index("ix_user_sessions_user_active", "user_id", "revoked_at", "expires_at"),
     )
 

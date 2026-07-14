@@ -195,11 +195,13 @@ def _resolve_oidc_user(db: Session, request: Request, token: str, claims: dict[s
     issuer = str(claims["iss"]).rstrip("/")
     subject = str(claims["sub"])
     identity = db.scalar(select(AuthIdentity).where(AuthIdentity.issuer == issuer, AuthIdentity.subject == subject))
-    email = str(claims.get("email") or _synthetic_email(issuer, subject)).lower()
+    claim_email = str(claims.get("email") or "").strip().lower() or None
+    email_verified = bool(claims.get("email_verified", False))
+    account_email = claim_email if claim_email and email_verified else _synthetic_email(issuer, subject)
     if identity is None:
-        user = db.scalar(select(User).where(User.email == email))
+        user = db.scalar(select(User).where(User.email == account_email))
         if user is None:
-            user = User(email=email, password_hash="", full_name=claims.get("name") or email.split("@", 1)[0], role="student", is_active=True)
+            user = User(email=account_email, password_hash="", full_name=claims.get("name") or account_email.split("@", 1)[0], role="student", is_active=True)
             db.add(user)
             db.flush()
         identity = AuthIdentity(user_id=user.id, issuer=issuer, subject=subject)
@@ -211,13 +213,22 @@ def _resolve_oidc_user(db: Session, request: Request, token: str, claims: dict[s
         raise AppError(403, "ACCOUNT_DISABLED", "Account is not active")
     _ensure_product_account_active(db, user.id)
 
-    identity.email = email
-    identity.email_verified = bool(claims.get("email_verified", False))
+    identity.email = claim_email
+    identity.email_verified = email_verified
     identity.claims_snapshot = {key: claims.get(key) for key in ("iss", "sub", "email", "email_verified", "name", "scope", "permissions") if key in claims}
     identity.last_login_at = _utcnow()
 
     fingerprint = hashlib.sha256(token.encode()).hexdigest()
-    session = db.scalar(select(UserSession).where(UserSession.token_fingerprint == fingerprint))
+    provider_session_id = str(claims.get("sid") or "").strip() or None
+    if provider_session_id:
+        session = db.scalar(
+            select(UserSession).where(
+                UserSession.identity_id == identity.id,
+                UserSession.provider_session_id == provider_session_id,
+            )
+        )
+    else:
+        session = db.scalar(select(UserSession).where(UserSession.token_fingerprint == fingerprint))
     expires_at = datetime.fromtimestamp(_timestamp(claims.get("exp")), tz=timezone.utc)
     token_scopes = sorted(_scopes(claims))
     device = {
@@ -229,7 +240,7 @@ def _resolve_oidc_user(db: Session, request: Request, token: str, claims: dict[s
             user_id=user.id,
             identity_id=identity.id,
             token_fingerprint=fingerprint,
-            provider_session_id=claims.get("sid"),
+            provider_session_id=provider_session_id,
             device=device,
             scopes=token_scopes,
             expires_at=expires_at,
@@ -238,6 +249,7 @@ def _resolve_oidc_user(db: Session, request: Request, token: str, claims: dict[s
     elif session.revoked_at is not None:
         raise AppError(401, "SESSION_REVOKED", "Session has been revoked")
     else:
+        session.token_fingerprint = fingerprint
         session.last_seen_at = _utcnow()
         session.expires_at = expires_at
         session.device = device
