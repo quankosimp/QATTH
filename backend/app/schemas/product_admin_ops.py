@@ -60,6 +60,24 @@ class AdminUserSummary(BaseModel):
     created_at: datetime
 
 
+class UpdateAccountStatusRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["active", "locked", "disabled"]
+    reason: str = Field(min_length=3, max_length=500)
+
+
+class AccountStatusView(BaseModel):
+    event_id: str
+    user_id: str
+    previous_status: str
+    new_status: Literal["active", "locked", "disabled"]
+    reason: str
+    effective_at: datetime
+    sessions_revoked: int
+    tokens_revoked: int
+
+
 class ModerationCaseView(BaseModel):
     id: str
     job_id: str

@@ -7,20 +7,21 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import redis
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from app.core.celery_app import celery_app
 from app.core.config import get_settings
 from app.core.errors import AppError
 from app.core.identity_security import ProductCurrentUser
-from app.models.db import User
-from app.models.identity import UserProductProfile
+from app.models.db import AuthToken, User
+from app.models.identity import AccountStatusEvent, UserProductProfile, UserSession
 from app.models.product_admin_ops import AuditChainHead, ModelConfiguration, OperationalJob, PrivilegedAuditEvent, PrivilegedCommand
 from app.models.product_jobs import JobSource, JobSourceRecord, ProductJob
 from app.models.product_recommendations import JobModerationCase
 from app.schemas.product_admin_ops import (
     AdminUserSummary,
+    AccountStatusView,
     BackgroundJobPage,
     BackgroundJobView,
     CreateModelConfigurationRequest,
@@ -31,6 +32,7 @@ from app.schemas.product_admin_ops import (
     ResolveModerationCaseRequest,
     RetryBackgroundJobRequest,
     UpdateJobSourceRequest,
+    UpdateAccountStatusRequest,
 )
 
 
@@ -148,6 +150,95 @@ class ProductAdminOpsService:
         self._audit(current, "user.search", "user", None, None, context, {"query_hash": hashlib.sha256(normalized.encode()).hexdigest(), "result_count": len(output), "pii_unmasked": can_view_pii})
         self.db.commit()
         return output
+
+    def update_account_status(
+        self,
+        current: ProductCurrentUser,
+        user_id: str,
+        payload: UpdateAccountStatusRequest,
+        idempotency_key: str,
+        context: dict[str, Any],
+    ) -> AccountStatusView:
+        command, replay = self._command(
+            current,
+            "update_account_status:" + user_id,
+            idempotency_key,
+            payload.model_dump(mode="json"),
+        )
+        if replay:
+            return AccountStatusView.model_validate(command.response_snapshot)
+        if user_id == current.id and payload.status != "active":
+            raise AppError(409, "ADMIN_SELF_LOCK_FORBIDDEN", "Administrators cannot lock or disable their own account")
+        user = self.db.scalar(select(User).where(User.id == user_id).with_for_update())
+        if user is None:
+            raise AppError(404, "USER_NOT_FOUND", "User was not found")
+        profile = self.db.scalar(
+            select(UserProductProfile)
+            .where(UserProductProfile.user_id == user.id)
+            .with_for_update()
+        )
+        if profile is None:
+            profile = UserProductProfile(user_id=user.id, account_status="active")
+            self.db.add(profile)
+            self.db.flush()
+        previous_status = profile.account_status
+        now = _utcnow()
+        profile.account_status = payload.status
+        profile.updated_at = now
+        user.is_active = payload.status != "disabled"
+        sessions_revoked = 0
+        tokens_revoked = 0
+        if payload.status != "active":
+            session_result = self.db.execute(
+                update(UserSession)
+                .where(UserSession.user_id == user.id, UserSession.revoked_at.is_(None))
+                .values(revoked_at=now)
+            )
+            token_result = self.db.execute(
+                update(AuthToken)
+                .where(AuthToken.user_id == user.id, AuthToken.revoked_at.is_(None))
+                .values(revoked_at=now)
+            )
+            sessions_revoked = int(session_result.rowcount or 0)
+            tokens_revoked = int(token_result.rowcount or 0)
+        event = AccountStatusEvent(
+            user_id=user.id,
+            previous_status=previous_status,
+            new_status=payload.status,
+            reason=payload.reason,
+            actor_id=current.id,
+            created_at=now,
+        )
+        self.db.add(event)
+        self.db.flush()
+        response = AccountStatusView(
+            event_id=event.id,
+            user_id=user.id,
+            previous_status=previous_status,
+            new_status=payload.status,
+            reason=payload.reason,
+            effective_at=now,
+            sessions_revoked=sessions_revoked,
+            tokens_revoked=tokens_revoked,
+        )
+        response_snapshot = response.model_dump(mode="json")
+        self._complete_command(command, "account_status_event", event.id, response_snapshot)
+        self._audit(
+            current,
+            "user.account_status.update",
+            "user",
+            user.id,
+            payload.reason,
+            context,
+            {
+                "previous_status": previous_status,
+                "new_status": payload.status,
+                "sessions_revoked": sessions_revoked,
+                "tokens_revoked": tokens_revoked,
+            },
+        )
+        self.db.commit()
+        return response
 
     def moderation_cases(self, current: ProductCurrentUser, case_status: str | None, context: dict[str, Any]) -> list[ModerationCaseView]:
         statement = select(JobModerationCase)

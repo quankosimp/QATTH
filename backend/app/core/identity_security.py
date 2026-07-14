@@ -181,6 +181,16 @@ def _synthetic_email(issuer: str, subject: str) -> str:
     return safe_subject + "+" + issuer_hash + "@oidc.invalid"
 
 
+def _ensure_product_account_active(db: Session, user_id: str) -> None:
+    account_status = db.scalar(
+        select(UserProductProfile.account_status).where(UserProductProfile.user_id == user_id)
+    )
+    if account_status == "locked":
+        raise AppError(403, "ACCOUNT_LOCKED", "Account has been locked by an administrator")
+    if account_status == "disabled":
+        raise AppError(403, "ACCOUNT_DISABLED", "Account is disabled")
+
+
 def _resolve_oidc_user(db: Session, request: Request, token: str, claims: dict[str, Any]) -> ProductCurrentUser:
     issuer = str(claims["iss"]).rstrip("/")
     subject = str(claims["sub"])
@@ -199,6 +209,7 @@ def _resolve_oidc_user(db: Session, request: Request, token: str, claims: dict[s
         user = db.get(User, identity.user_id)
     if user is None or not user.is_active:
         raise AppError(403, "ACCOUNT_DISABLED", "Account is not active")
+    _ensure_product_account_active(db, user.id)
 
     identity.email = email
     identity.email_verified = bool(claims.get("email_verified", False))
@@ -251,6 +262,7 @@ def _resolve_local_token(db: Session, token: str) -> ProductCurrentUser:
     user = db.get(User, auth_token.user_id)
     if user is None or not user.is_active:
         raise AppError(403, "ACCOUNT_DISABLED", "Account is not active")
+    _ensure_product_account_active(db, user.id)
     return ProductCurrentUser(
         id=user.id,
         email=user.email,
@@ -282,6 +294,10 @@ def get_product_user(
     privacy_status_path = request.url.path.startswith(str(settings.api_v1_prefix).rstrip("/") + "/privacy/requests/")
     if account_status == "pending_deletion" and not privacy_status_path:
         raise AppError(403, "ACCOUNT_PENDING_DELETION", "Account deletion is in progress")
+    if account_status == "locked":
+        raise AppError(403, "ACCOUNT_LOCKED", "Account has been locked by an administrator")
+    if account_status == "disabled":
+        raise AppError(403, "ACCOUNT_DISABLED", "Account is disabled")
     return current
 
 

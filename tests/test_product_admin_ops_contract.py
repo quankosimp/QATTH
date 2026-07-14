@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_admin_ops_contract_exposes_required_routes() -> None:
     source = (ROOT / "backend/app/api/v1/admin_ops.py").read_text()
-    for path in ("/admin/model-configurations", "/admin/job-sources", "/ops/background-jobs", "/ops/background-jobs/{job_id}/retry"):
+    for path in ("/admin/model-configurations", "/admin/job-sources", "/admin/users/{user_id}/status", "/ops/background-jobs", "/ops/background-jobs/{job_id}/retry"):
         assert path in source
     assert "require_product_scopes" in source
 
@@ -25,3 +25,12 @@ def test_celery_jobs_are_observable_and_scheduled() -> None:
     assert "task_prerun" in source
     assert "task_failure" in source
     assert "beat_schedule" in source
+
+
+def test_account_status_is_enforced_and_revokes_sessions() -> None:
+    security = (ROOT / "backend/app/core/identity_security.py").read_text()
+    service = (ROOT / "backend/app/services/product_admin_ops.py").read_text()
+    assert "ACCOUNT_LOCKED" in security
+    assert "update(UserSession)" in service
+    assert "update(AuthToken)" in service
+    assert "user.account_status.update" in service

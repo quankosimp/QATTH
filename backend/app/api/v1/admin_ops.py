@@ -8,6 +8,7 @@ from app.core.identity_security import ProductCurrentUser, require_product_scope
 from app.schemas.common import APIResponse, make_response
 from app.schemas.product_admin_ops import (
     ActivateModelConfigurationRequest,
+    AccountStatusView,
     AdminUserSummary,
     BackgroundJobPage,
     BackgroundJobView,
@@ -19,6 +20,7 @@ from app.schemas.product_admin_ops import (
     ResolveModerationCaseRequest,
     RetryBackgroundJobRequest,
     UpdateJobSourceRequest,
+    UpdateAccountStatusRequest,
 )
 from app.services.product_admin_ops import ProductAdminOpsService
 
@@ -29,6 +31,7 @@ model_write = require_product_scopes("admin:model:write")
 jobs_read = require_product_scopes("admin:jobs:read")
 jobs_write = require_product_scopes("admin:jobs:write")
 users_read = require_product_scopes("admin:users:read")
+users_write = require_product_scopes("admin:users:write")
 ops_read = require_product_scopes("ops:jobs:read")
 ops_write = require_product_scopes("ops:jobs:write")
 
@@ -69,6 +72,27 @@ def update_admin_job_source(source_id: str, payload: UpdateJobSourceRequest, req
 @router.get("/admin/users", response_model=APIResponse[list[AdminUserSummary]])
 def search_admin_users(request: Request, q: str = Query(..., min_length=3, max_length=320), current: ProductCurrentUser = Depends(users_read), db: Session = Depends(get_db)):
     return make_response(ProductAdminOpsService(db).search_users(current, q, _context(request)), request=request)
+
+
+@router.patch("/admin/users/{user_id}/status", response_model=APIResponse[AccountStatusView])
+def update_admin_user_status(
+    user_id: str,
+    payload: UpdateAccountStatusRequest,
+    request: Request,
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
+    current: ProductCurrentUser = Depends(users_write),
+    db: Session = Depends(get_db),
+):
+    return make_response(
+        ProductAdminOpsService(db).update_account_status(
+            current,
+            user_id,
+            payload,
+            idempotency_key,
+            _context(request),
+        ),
+        request=request,
+    )
 
 
 @router.get("/admin/moderation-cases", response_model=APIResponse[list[ModerationCaseView]])
