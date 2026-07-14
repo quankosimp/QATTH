@@ -1,6 +1,7 @@
 import base64
 import binascii
 from functools import lru_cache
+from ipaddress import ip_network
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
@@ -50,6 +51,8 @@ class Settings(BaseSettings):
 
     rate_limit_enabled: bool = True
     rate_limit_requests_per_minute: int = 120
+    rate_limit_ai_requests_per_minute: int = 30
+    trusted_proxy_cidrs: list[str] = Field(default_factory=list)
     idempotency_ttl_seconds: int = 86_400
     product_processing_policy_version: str = "2026-07-14"
 
@@ -122,8 +125,13 @@ class Settings(BaseSettings):
     def validate_environment_contract(self) -> "Settings":
         if self.database_pool_size < 1 or self.database_pool_overflow < 0:
             raise ValueError("Database pool limits must be non-negative.")
-        if self.rate_limit_requests_per_minute < 1:
-            raise ValueError("RATE_LIMIT_REQUESTS_PER_MINUTE must be positive.")
+        if self.rate_limit_requests_per_minute < 1 or self.rate_limit_ai_requests_per_minute < 1:
+            raise ValueError("Rate limits must be positive.")
+        try:
+            for cidr in self.trusted_proxy_cidrs:
+                ip_network(cidr, strict=False)
+        except ValueError as exc:
+            raise ValueError("TRUSTED_PROXY_CIDRS must contain valid IPv4/IPv6 networks.") from exc
         if self.signed_url_ttl_seconds < 30:
             raise ValueError("SIGNED_URL_TTL_SECONDS must be at least 30 seconds.")
         if not 1 <= self.clamav_port <= 65_535 or self.clamav_timeout_seconds <= 0:
@@ -176,6 +184,14 @@ class Settings(BaseSettings):
             errors.append("DATABASE_URL must use PostgreSQL in production")
         if self.auto_create_tables:
             errors.append("AUTO_CREATE_TABLES must be false in production")
+        if not self.rate_limit_enabled:
+            errors.append("RATE_LIMIT_ENABLED must be true in production")
+        if not self.redis_url.startswith("rediss://"):
+            errors.append("REDIS_URL must use TLS (rediss://) in production")
+        if not self.celery_broker_url.startswith("rediss://") or not self.celery_result_backend.startswith("rediss://"):
+            errors.append("Celery Redis URLs must use TLS (rediss://) in production")
+        if not self.trusted_proxy_cidrs:
+            errors.append("TRUSTED_PROXY_CIDRS is required in production")
         if self.storage_backend != "r2":
             errors.append("STORAGE_BACKEND must be r2 in production")
         for name, value in (

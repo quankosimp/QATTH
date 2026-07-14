@@ -18,6 +18,7 @@ def test_production_config_fails_fast_for_required_security_dependencies() -> No
         "PAYMENT_WEBHOOK_SECRET",
         "PAYMENT_PADDLE_PRICE_IDS",
         "PAYMENT_SUCCESS_URL_ALLOWLIST",
+        "TRUSTED_PROXY_CIDRS",
     ):
         assert required in message
 
@@ -29,6 +30,10 @@ def test_complete_production_config_passes_startup_contract() -> None:
         public_api_origin="https://api.qatth.example",
         cors_origins=["https://app.qatth.example"],
         database_url="postgresql+psycopg://user:secret@db.example/qatth",
+        redis_url="rediss://redis.example/0",
+        celery_broker_url="rediss://redis.example/0",
+        celery_result_backend="rediss://redis.example/1",
+        trusted_proxy_cidrs=["10.0.0.0/8"],
         auto_create_tables=False,
         storage_backend="r2",
         r2_endpoint_url="https://account.r2.cloudflarestorage.com",

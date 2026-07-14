@@ -127,6 +127,9 @@ Production thiếu biến bắt buộc phải fail fast. Secret được inject 
 | DATABASE_POOL_OVERFLOW | No | Bounded overflow |
 | REDIS_URL | Yes | TLS Redis connection |
 | REDIS_KEY_PREFIX | No | Environment isolation |
+| RATE_LIMIT_REQUESTS_PER_MINUTE | No | Default per-action IP/principal quota |
+| RATE_LIMIT_AI_REQUESTS_PER_MINUTE | No | Lower quota for AI-cost write actions |
+| TRUSTED_PROXY_CIDRS | No | Only peers allowed to supply Cloudflare/forwarded client IP |
 | STORAGE_BACKEND | No | Must be <code>r2</code> in target production |
 | R2_ENDPOINT_URL | No | Account endpoint |
 | R2_BUCKET | No | Private bucket |
