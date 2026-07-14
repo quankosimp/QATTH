@@ -1,0 +1,3042 @@
+openapi: 3.1.0
+jsonSchemaDialect: https://json-schema.org/draft/2020-12/schema
+info:
+  title: QATTH Product API
+  version: 1.0.0-draft
+  summary: Product v1 contract for AI-assisted career preparation and job discovery.
+  description: |
+    Target contract for the production QATTH product. This contract intentionally
+    extends beyond the current demo backend. Each operation declares
+    x-implementation-status as implemented-demo, partial, or planned.
+  x-contract-status: draft
+  x-document-language: vi-VN
+servers:
+  - url: http://localhost:8000
+    description: Local backend
+  - url: https://api.qatthcv.com
+    description: Production target
+security:
+  - bearerAuth: []
+tags:
+  - name: Health
+  - name: Identity
+  - name: Files
+  - name: CV
+  - name: Interviews
+  - name: Jobs
+  - name: Recommendations
+  - name: Billing
+  - name: Privacy
+  - name: Admin
+  - name: Operations
+
+paths:
+  /health/live:
+    get:
+      tags: [Health]
+      summary: Process liveness
+      operationId: getLiveness
+      security: []
+      x-implementation-status: partial
+      x-requirement-ids: [FR-OPS-001, NFR-AVL-002]
+      responses:
+        '200':
+          description: Process is alive.
+          headers:
+            X-Request-ID:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /health/ready:
+    get:
+      tags: [Health]
+      summary: Instance readiness
+      operationId: getReadiness
+      security: []
+      x-implementation-status: partial
+      x-requirement-ids: [FR-OPS-001, NFR-AVL-002]
+      responses:
+        '200':
+          description: Instance can receive traffic.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          $ref: '#/components/responses/Error'
+
+  /v1/me:
+    get:
+      tags: [Identity]
+      summary: Get the authenticated user
+      operationId: getCurrentUser
+      x-implementation-status: partial
+      x-requirement-ids: [FR-AUTH-001, FR-AUTH-002, FR-PROFILE-001]
+      responses:
+        '200':
+          description: Current user.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/User'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/me/profile:
+    patch:
+      tags: [Identity]
+      summary: Update the career profile
+      operationId: updateCurrentUserProfile
+      x-implementation-status: partial
+      x-requirement-ids: [FR-PROFILE-001, FR-PROFILE-002]
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: '#/components/schemas/ProfilePatch'
+      responses:
+        '200':
+          description: Updated user profile.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/User'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/me/consents:
+    get:
+      tags: [Identity]
+      summary: List current consent records
+      operationId: listCurrentUserConsents
+      x-implementation-status: partial
+      x-requirement-ids: [FR-PROFILE-003, FR-PRIV-003]
+      responses:
+        '200':
+          description: Consent records.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Consent'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      tags: [Identity]
+      summary: Grant or withdraw consent
+      operationId: setCurrentUserConsent
+      x-implementation-status: partial
+      x-requirement-ids: [FR-PROFILE-003, FR-PRIV-003]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsentChange'
+      responses:
+        '200':
+          description: Recorded consent state.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Consent'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/files/upload-intents:
+    post:
+      tags: [Files]
+      summary: Create a direct upload intent
+      operationId: createUploadIntent
+      x-implementation-status: planned
+      x-requirement-ids: [FR-FILE-001, FR-FILE-002]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUploadIntentRequest'
+      responses:
+        '201':
+          description: Upload intent and signed URL.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/UploadIntent'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/files/{file_id}/complete:
+    parameters:
+      - $ref: '#/components/parameters/FileId'
+    post:
+      tags: [Files]
+      summary: Complete and verify an upload
+      operationId: completeFileUpload
+      x-implementation-status: planned
+      x-requirement-ids: [FR-FILE-001, FR-FILE-002]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteUploadRequest'
+      responses:
+        '200':
+          description: Verified file metadata.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/FileAsset'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/files/{file_id}/download-url:
+    parameters:
+      - $ref: '#/components/parameters/FileId'
+    post:
+      tags: [Files]
+      summary: Create a short-lived download URL
+      operationId: createFileDownloadUrl
+      x-implementation-status: planned
+      x-requirement-ids: [FR-FILE-003]
+      responses:
+        '200':
+          description: Signed download URL.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/SignedUrl'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/cv-scans:
+    post:
+      tags: [CV]
+      summary: Start structured CV extraction
+      operationId: createCvScan
+      x-implementation-status: partial
+      x-requirement-ids: [FR-CV-001, FR-CV-002, FR-CV-003]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCvScanRequest'
+      responses:
+        '202':
+          description: CV scan accepted.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CvScan'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/cv-scans/{scan_id}:
+    parameters:
+      - $ref: '#/components/parameters/ScanId'
+    get:
+      tags: [CV]
+      summary: Get CV scan status
+      operationId: getCvScan
+      x-implementation-status: partial
+      x-requirement-ids: [FR-CV-001, FR-CV-008]
+      responses:
+        '200':
+          description: Scan state.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CvScan'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/cv-scans/{scan_id}/draft:
+    parameters:
+      - $ref: '#/components/parameters/ScanId'
+    get:
+      tags: [CV]
+      summary: Get editable CV draft
+      operationId: getCvDraft
+      x-implementation-status: implemented-demo
+      x-requirement-ids: [FR-CV-003]
+      responses:
+        '200':
+          description: Editable draft.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CvDraft'
+        default:
+          $ref: '#/components/responses/Error'
+    patch:
+      tags: [CV]
+      summary: Edit CV draft
+      operationId: updateCvDraft
+      x-implementation-status: implemented-demo
+      x-requirement-ids: [FR-CV-003]
+      parameters:
+        - name: If-Match
+          in: header
+          required: true
+          description: Current draft revision or ETag.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: '#/components/schemas/CvDraftPatch'
+      responses:
+        '200':
+          description: Updated draft.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CvDraft'
+        '409':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/cv-scans/{scan_id}/confirm:
+    parameters:
+      - $ref: '#/components/parameters/ScanId'
+    post:
+      tags: [CV]
+      summary: Confirm draft and create immutable CV version
+      operationId: confirmCvDraft
+      x-implementation-status: implemented-demo
+      x-requirement-ids: [FR-CV-004, FR-CV-005]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmCvDraftRequest'
+      responses:
+        '201':
+          description: Confirmed CV version.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CvVersion'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/cvs:
+    get:
+      tags: [CV]
+      summary: List the current user's CVs
+      operationId: listCvs
+      x-implementation-status: partial
+      x-requirement-ids: [FR-CV-005, FR-CV-009]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Paginated CVs.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CvPage'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/cvs/{cv_id}/versions:
+    parameters:
+      - $ref: '#/components/parameters/CvId'
+    get:
+      tags: [CV]
+      summary: List immutable CV versions
+      operationId: listCvVersions
+      x-implementation-status: partial
+      x-requirement-ids: [FR-CV-005, FR-CV-006]
+      responses:
+        '200':
+          description: CV versions.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/CvVersion'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/cvs/{cv_id}/active-version:
+    parameters:
+      - $ref: '#/components/parameters/CvId'
+    put:
+      tags: [CV]
+      summary: Select the active CV version
+      operationId: setActiveCvVersion
+      x-implementation-status: partial
+      x-requirement-ids: [FR-CV-005]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version_id]
+              properties:
+                version_id:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Active version selected.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CvVersion'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/cv-versions/{version_id}/analyses:
+    parameters:
+      - $ref: '#/components/parameters/CvVersionId'
+    post:
+      tags: [CV]
+      summary: Start CV analysis
+      operationId: createCvAnalysis
+      x-implementation-status: partial
+      x-requirement-ids: [FR-CV-007]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Analysis accepted.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CvAnalysis'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/cv-analyses/{analysis_id}:
+    parameters:
+      - $ref: '#/components/parameters/CvAnalysisId'
+    get:
+      tags: [CV]
+      summary: Get CV analysis
+      operationId: getCvAnalysis
+      x-implementation-status: partial
+      x-requirement-ids: [FR-CV-007, FR-CV-008]
+      responses:
+        '200':
+          description: Analysis state or result.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CvAnalysis'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/interviews:
+    get:
+      tags: [Interviews]
+      summary: List interview sessions
+      operationId: listInterviews
+      x-implementation-status: partial
+      x-requirement-ids: [FR-INT-001, FR-INT-007]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Interview page.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/InterviewPage'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Interviews]
+      summary: Create an interview session
+      operationId: createInterview
+      x-implementation-status: partial
+      x-requirement-ids: [FR-INT-001]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInterviewRequest'
+      responses:
+        '201':
+          description: Interview created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Interview'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/interviews/{interview_id}:
+    parameters:
+      - $ref: '#/components/parameters/InterviewId'
+    get:
+      tags: [Interviews]
+      summary: Get interview state
+      operationId: getInterview
+      x-implementation-status: partial
+      x-requirement-ids: [FR-INT-001, FR-INT-005]
+      responses:
+        '200':
+          description: Interview state.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Interview'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/interviews/{interview_id}/realtime-token:
+    parameters:
+      - $ref: '#/components/parameters/InterviewId'
+    post:
+      tags: [Interviews]
+      summary: Create a scoped realtime token
+      operationId: createInterviewRealtimeToken
+      x-implementation-status: planned
+      x-requirement-ids: [FR-INT-002, FR-INT-003]
+      responses:
+        '201':
+          description: Short-lived connection token.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/RealtimeToken'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/interviews/{interview_id}/realtime:
+    parameters:
+      - $ref: '#/components/parameters/InterviewId'
+    get:
+      tags: [Interviews]
+      summary: Upgrade to the interview WebSocket
+      description: Uses the scoped realtime token during the WebSocket upgrade.
+      operationId: connectInterviewRealtime
+      x-implementation-status: planned
+      x-requirement-ids: [FR-INT-003, FR-INT-004, FR-INT-005]
+      x-websocket-events:
+        client:
+          - session.start
+          - audio.append
+          - audio.commit
+          - session.end
+          - ping
+        server:
+          - session.ready
+          - transcript.delta
+          - transcript.final
+          - audio.delta
+          - warning
+          - session.ended
+          - error
+      responses:
+        '101':
+          description: Switching Protocols.
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/interviews/{interview_id}/end:
+    parameters:
+      - $ref: '#/components/parameters/InterviewId'
+    post:
+      tags: [Interviews]
+      summary: End an interview and queue evaluation
+      operationId: endInterview
+      x-implementation-status: partial
+      x-requirement-ids: [FR-INT-005, FR-INT-006]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Interview ending and evaluation queued.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Interview'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/interviews/{interview_id}/report:
+    parameters:
+      - $ref: '#/components/parameters/InterviewId'
+    get:
+      tags: [Interviews]
+      summary: Get interview evaluation report
+      operationId: getInterviewReport
+      x-implementation-status: partial
+      x-requirement-ids: [FR-INT-006, FR-INT-007]
+      responses:
+        '200':
+          description: Evaluation report.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/InterviewReport'
+        '202':
+          description: Evaluation is still processing.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Interview'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/jobs:
+    get:
+      tags: [Jobs]
+      summary: Search the indexed job catalog
+      operationId: searchIndexedJobs
+      x-implementation-status: partial
+      x-requirement-ids: [FR-JOB-005, FR-JOB-006, FR-JOB-011]
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+            maxLength: 500
+        - name: location
+          in: query
+          schema:
+            type: string
+        - name: remote_mode
+          in: query
+          schema:
+            $ref: '#/components/schemas/RemoteMode'
+        - name: skills
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: false
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Indexed job results.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/JobPage'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/jobs/{job_id}:
+    parameters:
+      - $ref: '#/components/parameters/JobId'
+    get:
+      tags: [Jobs]
+      summary: Get normalized job details and provenance
+      operationId: getJob
+      x-implementation-status: partial
+      x-requirement-ids: [FR-JOB-003, FR-JOB-004, FR-JOB-005]
+      responses:
+        '200':
+          description: Job details.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Job'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/job-search-runs:
+    post:
+      tags: [Jobs]
+      summary: Start a hybrid indexed and live web search
+      operationId: createJobSearchRun
+      x-implementation-status: partial
+      x-requirement-ids: [FR-JOB-002, FR-JOB-006, FR-JOB-007, FR-JOB-009]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateJobSearchRequest'
+      responses:
+        '202':
+          description: Search accepted.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/JobSearchRun'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/job-search-runs/{run_id}:
+    parameters:
+      - $ref: '#/components/parameters/RunId'
+    get:
+      tags: [Jobs]
+      summary: Get job search status
+      operationId: getJobSearchRun
+      x-implementation-status: partial
+      x-requirement-ids: [FR-JOB-002, FR-JOB-009]
+      responses:
+        '200':
+          description: Search run state.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/JobSearchRun'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/job-search-runs/{run_id}/events:
+    parameters:
+      - $ref: '#/components/parameters/RunId'
+      - name: Last-Event-ID
+        in: header
+        required: false
+        schema:
+          type: string
+    get:
+      tags: [Jobs]
+      summary: Stream job search progress using SSE
+      operationId: streamJobSearchEvents
+      x-implementation-status: planned
+      x-requirement-ids: [FR-JOB-009]
+      x-sse-events:
+        - run.started
+        - source.progress
+        - job.discovered
+        - job.verified
+        - results.updated
+        - run.completed
+        - run.failed
+      responses:
+        '200':
+          description: Server-sent event stream.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: SSE frames with id, event, and JSON data fields.
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/job-search-runs/{run_id}/results:
+    parameters:
+      - $ref: '#/components/parameters/RunId'
+    get:
+      tags: [Jobs]
+      summary: Get a snapshot of ranked search results
+      operationId: listJobSearchResults
+      x-implementation-status: partial
+      x-requirement-ids: [FR-JOB-007, FR-JOB-008, FR-JOB-009]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Ranked search result page.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/JobMatchPage'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/jobs/{job_id}/interactions:
+    parameters:
+      - $ref: '#/components/parameters/JobId'
+    put:
+      tags: [Jobs]
+      summary: Upsert a user interaction with a job
+      operationId: upsertJobInteraction
+      x-implementation-status: partial
+      x-requirement-ids: [FR-JOB-010, FR-JOB-012]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JobInteractionRequest'
+      responses:
+        '200':
+          description: Recorded interaction.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/JobInteraction'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/job-applications:
+    get:
+      tags: [Jobs]
+      summary: List tracked applications
+      operationId: listJobApplications
+      x-implementation-status: planned
+      x-requirement-ids: [FR-JOB-010]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Application page.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ApplicationPage'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Jobs]
+      summary: Track a job application
+      operationId: createJobApplication
+      x-implementation-status: planned
+      x-requirement-ids: [FR-JOB-010]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateApplicationRequest'
+      responses:
+        '201':
+          description: Application created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/JobApplication'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/job-applications/{application_id}:
+    parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+    patch:
+      tags: [Jobs]
+      summary: Update an application status
+      operationId: updateJobApplication
+      x-implementation-status: planned
+      x-requirement-ids: [FR-JOB-010]
+      requestBody:
+        required: true
+        content:
+          application/merge-patch+json:
+            schema:
+              $ref: '#/components/schemas/ApplicationPatch'
+      responses:
+        '200':
+          description: Updated application.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/JobApplication'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/recommendation-runs:
+    post:
+      tags: [Recommendations]
+      summary: Start a recommendation run
+      operationId: createRecommendationRun
+      x-implementation-status: partial
+      x-requirement-ids: [FR-REC-001, FR-REC-002, FR-REC-003]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRecommendationRequest'
+      responses:
+        '202':
+          description: Recommendation accepted.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/RecommendationRun'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/recommendation-runs/{run_id}:
+    parameters:
+      - $ref: '#/components/parameters/RunId'
+    get:
+      tags: [Recommendations]
+      summary: Get recommendation run status
+      operationId: getRecommendationRun
+      x-implementation-status: partial
+      x-requirement-ids: [FR-REC-002]
+      responses:
+        '200':
+          description: Recommendation state.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/RecommendationRun'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/recommendation-runs/{run_id}/results:
+    parameters:
+      - $ref: '#/components/parameters/RunId'
+    get:
+      tags: [Recommendations]
+      summary: List recommendation results
+      operationId: listRecommendationResults
+      x-implementation-status: partial
+      x-requirement-ids: [FR-REC-002, FR-REC-003]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Recommendation results.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/JobMatchPage'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/billing/catalog:
+    get:
+      tags: [Billing]
+      summary: Get available plans and prices
+      operationId: getBillingCatalog
+      security: []
+      x-implementation-status: planned
+      x-requirement-ids: [FR-BILL-001]
+      responses:
+        '200':
+          description: Public plan catalog.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Plan'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/billing/subscription:
+    get:
+      tags: [Billing]
+      summary: Get the current subscription
+      operationId: getCurrentSubscription
+      x-implementation-status: planned
+      x-requirement-ids: [FR-BILL-001, FR-BILL-002]
+      responses:
+        '200':
+          description: Subscription and entitlements.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Subscription'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/billing/credits:
+    get:
+      tags: [Billing]
+      summary: Get credit balance and ledger
+      operationId: getCreditAccount
+      x-implementation-status: planned
+      x-requirement-ids: [FR-BILL-004, FR-BILL-006]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Credit account and ledger page.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CreditAccount'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/billing/checkout-sessions:
+    post:
+      tags: [Billing]
+      summary: Create a checkout session
+      operationId: createCheckoutSession
+      x-implementation-status: planned
+      x-requirement-ids: [FR-BILL-002, FR-BILL-003]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCheckoutRequest'
+      responses:
+        '201':
+          description: Checkout redirect.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/RedirectSession'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/billing/portal-sessions:
+    post:
+      tags: [Billing]
+      summary: Create a customer portal session
+      operationId: createBillingPortalSession
+      x-implementation-status: planned
+      x-requirement-ids: [FR-BILL-002]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: Portal redirect.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/RedirectSession'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/webhooks/payments/{provider}:
+    parameters:
+      - name: provider
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: '^[a-z0-9_-]+$'
+    post:
+      tags: [Billing]
+      summary: Receive a payment provider webhook
+      operationId: receivePaymentWebhook
+      security:
+        - webhookSignature: []
+      x-implementation-status: planned
+      x-requirement-ids: [FR-BILL-003]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '202':
+          description: Verified event accepted or previously processed.
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/privacy/exports:
+    post:
+      tags: [Privacy]
+      summary: Request a personal data export
+      operationId: createPrivacyExport
+      x-implementation-status: planned
+      x-requirement-ids: [FR-PRIV-001]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '202':
+          description: Export request accepted.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PrivacyRequest'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/privacy/deletions:
+    post:
+      tags: [Privacy]
+      summary: Request account and data deletion
+      operationId: createPrivacyDeletion
+      x-implementation-status: planned
+      x-requirement-ids: [FR-PRIV-002]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirmation]
+              properties:
+                confirmation:
+                  type: string
+                  const: DELETE
+                reason:
+                  type: [string, 'null']
+                  maxLength: 500
+      responses:
+        '202':
+          description: Deletion request accepted.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PrivacyRequest'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/privacy/requests/{request_id}:
+    parameters:
+      - name: request_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [Privacy]
+      summary: Get privacy request status
+      operationId: getPrivacyRequest
+      x-implementation-status: planned
+      x-requirement-ids: [FR-PRIV-001, FR-PRIV-002]
+      responses:
+        '200':
+          description: Privacy request state and optional download.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PrivacyRequest'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/admin/model-configurations:
+    get:
+      tags: [Admin]
+      summary: List prompt and model configurations
+      operationId: listModelConfigurations
+      x-implementation-status: partial
+      x-requirement-ids: [FR-ADMIN-002]
+      security:
+        - bearerAuth: [admin:model:read]
+      responses:
+        '200':
+          description: Versioned configurations.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/ModelConfiguration'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Admin]
+      summary: Create a prompt or model configuration version
+      operationId: createModelConfiguration
+      x-implementation-status: partial
+      x-requirement-ids: [FR-ADMIN-002]
+      security:
+        - bearerAuth: [admin:model:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateModelConfigurationRequest'
+      responses:
+        '201':
+          description: Version created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ModelConfiguration'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/admin/job-sources:
+    get:
+      tags: [Admin]
+      summary: List job source health
+      operationId: listAdminJobSources
+      x-implementation-status: partial
+      x-requirement-ids: [FR-ADMIN-004]
+      security:
+        - bearerAuth: [admin:jobs:read]
+      responses:
+        '200':
+          description: Job source health.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/JobSource'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/admin/credit-adjustments:
+    post:
+      tags: [Admin]
+      summary: Post an audited credit adjustment
+      operationId: createCreditAdjustment
+      x-implementation-status: planned
+      x-requirement-ids: [FR-ADMIN-005, FR-BILL-004]
+      security:
+        - bearerAuth: [admin:billing:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreditAdjustmentRequest'
+      responses:
+        '201':
+          description: Adjustment posted.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/CreditLedgerEntry'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/ops/background-jobs:
+    get:
+      tags: [Operations]
+      summary: List background jobs
+      operationId: listBackgroundJobs
+      x-implementation-status: partial
+      x-requirement-ids: [FR-ADMIN-003, FR-OPS-002]
+      security:
+        - bearerAuth: [ops:jobs:read]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Background job page.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BackgroundJobPage'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /v1/ops/background-jobs/{job_id}/retry:
+    parameters:
+      - name: job_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      tags: [Operations]
+      summary: Retry a failed background job
+      operationId: retryBackgroundJob
+      x-implementation-status: partial
+      x-requirement-ids: [FR-ADMIN-003]
+      security:
+        - bearerAuth: [ops:jobs:write]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  minLength: 3
+                  maxLength: 500
+      responses:
+        '202':
+          description: Retry accepted.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/SuccessEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/BackgroundJob'
+        default:
+          $ref: '#/components/responses/Error'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: oauth2
+      description: OIDC access token. Scopes are enforced for privileged operations.
+      flows:
+        authorizationCode:
+          authorizationUrl: https://identity.example.com/oauth2/authorize
+          tokenUrl: https://identity.example.com/oauth2/token
+          scopes:
+            admin:model:read: Read AI configuration.
+            admin:model:write: Write AI configuration.
+            admin:jobs:read: Read job source operations.
+            admin:billing:write: Adjust credits.
+            ops:jobs:read: Read background jobs.
+            ops:jobs:write: Retry background jobs.
+    webhookSignature:
+      type: apiKey
+      in: header
+      name: X-Webhook-Signature
+      description: Provider-specific signature validated against the raw request body.
+
+  parameters:
+    RequestId:
+      name: X-Request-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        maxLength: 128
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      schema:
+        type: string
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    FileId:
+      name: file_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ScanId:
+      name: scan_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    CvId:
+      name: cv_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    CvVersionId:
+      name: version_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    CvAnalysisId:
+      name: analysis_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    InterviewId:
+      name: interview_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    JobId:
+      name: job_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RunId:
+      name: run_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ApplicationId:
+      name: application_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  headers:
+    RequestId:
+      description: Correlation identifier for support and tracing.
+      schema:
+        type: string
+
+  responses:
+    Error:
+      description: Standard error response.
+      headers:
+        X-Request-ID:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+
+  schemas:
+    Meta:
+      type: object
+      properties:
+        request_id:
+          type: string
+        next_cursor:
+          type: [string, 'null']
+        has_more:
+          type: boolean
+      additionalProperties: true
+
+    SuccessEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: {}
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    ErrorEnvelope:
+      type: object
+      required: [error, meta]
+      properties:
+        data:
+          type: 'null'
+        error:
+          $ref: '#/components/schemas/ApiError'
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    ApiError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          pattern: '^[A-Z0-9_]+$'
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+        retryable:
+          type: boolean
+
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, unavailable]
+        version:
+          type: string
+        checks:
+          type: object
+          additionalProperties:
+            type: string
+
+    User:
+      type: object
+      required: [id, status, locale, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [active, locked, pending_deletion]
+        email:
+          type: [string, 'null']
+          format: email
+        display_name:
+          type: [string, 'null']
+        locale:
+          type: string
+        timezone:
+          type: string
+        profile:
+          $ref: '#/components/schemas/CareerProfile'
+        job_preferences:
+          $ref: '#/components/schemas/JobPreferences'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CareerProfile:
+      type: object
+      properties:
+        headline:
+          type: [string, 'null']
+          maxLength: 200
+        location:
+          type: [string, 'null']
+        seniority:
+          type: [string, 'null']
+        skills:
+          type: array
+          items:
+            type: string
+        links:
+          type: array
+          items:
+            type: string
+            format: uri
+
+    JobPreferences:
+      type: object
+      properties:
+        target_roles:
+          type: array
+          items:
+            type: string
+        locations:
+          type: array
+          items:
+            type: string
+        remote_modes:
+          type: array
+          items:
+            $ref: '#/components/schemas/RemoteMode'
+        employment_types:
+          type: array
+          items:
+            type: string
+        minimum_salary:
+          type: [integer, 'null']
+          minimum: 0
+        salary_currency:
+          type: [string, 'null']
+          pattern: '^[A-Z]{3}$'
+        preferred_skills:
+          type: array
+          items:
+            type: string
+
+    ProfilePatch:
+      type: object
+      properties:
+        display_name:
+          type: [string, 'null']
+          maxLength: 120
+        locale:
+          type: string
+        timezone:
+          type: string
+        profile:
+          $ref: '#/components/schemas/CareerProfile'
+        job_preferences:
+          $ref: '#/components/schemas/JobPreferences'
+      additionalProperties: false
+
+    Consent:
+      type: object
+      required: [id, purpose, policy_version, status, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        purpose:
+          type: string
+          enum: [product_processing, marketing, model_training]
+        policy_version:
+          type: string
+        status:
+          type: string
+          enum: [granted, withdrawn]
+        granted_at:
+          type: [string, 'null']
+          format: date-time
+        withdrawn_at:
+          type: [string, 'null']
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ConsentChange:
+      type: object
+      required: [purpose, policy_version, status]
+      properties:
+        purpose:
+          type: string
+          enum: [product_processing, marketing, model_training]
+        policy_version:
+          type: string
+        status:
+          type: string
+          enum: [granted, withdrawn]
+      additionalProperties: false
+
+    CreateUploadIntentRequest:
+      type: object
+      required: [purpose, filename, content_type, size_bytes, sha256]
+      properties:
+        purpose:
+          type: string
+          enum: [cv_source]
+        filename:
+          type: string
+          maxLength: 255
+        content_type:
+          type: string
+          const: application/pdf
+        size_bytes:
+          type: integer
+          minimum: 1
+          maximum: 20971520
+        sha256:
+          type: string
+          pattern: '^[a-fA-F0-9]{64}$'
+      additionalProperties: false
+
+    UploadIntent:
+      type: object
+      required: [file, method, upload_url, expires_at]
+      properties:
+        file:
+          $ref: '#/components/schemas/FileAsset'
+        method:
+          type: string
+          const: PUT
+        upload_url:
+          type: string
+          format: uri
+        required_headers:
+          type: object
+          additionalProperties:
+            type: string
+        expires_at:
+          type: string
+          format: date-time
+
+    CompleteUploadRequest:
+      type: object
+      required: [sha256]
+      properties:
+        sha256:
+          type: string
+          pattern: '^[a-fA-F0-9]{64}$'
+        provider_etag:
+          type: [string, 'null']
+      additionalProperties: false
+
+    FileAsset:
+      type: object
+      required: [id, purpose, content_type, size_bytes, upload_status, security_status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        purpose:
+          type: string
+        content_type:
+          type: string
+        size_bytes:
+          type: integer
+        sha256:
+          type: string
+        upload_status:
+          type: string
+          enum: [pending, uploaded, rejected, deleted]
+        security_status:
+          type: string
+          enum: [pending, clean, quarantined, failed]
+        created_at:
+          type: string
+          format: date-time
+
+    SignedUrl:
+      type: object
+      required: [url, expires_at]
+      properties:
+        url:
+          type: string
+          format: uri
+        expires_at:
+          type: string
+          format: date-time
+
+    CreateCvScanRequest:
+      type: object
+      required: [file_id, extraction_schema_version]
+      properties:
+        file_id:
+          type: string
+          format: uuid
+        cv_id:
+          type: [string, 'null']
+          format: uuid
+        extraction_schema_version:
+          type: string
+          default: cv-1
+        locale_hint:
+          type: [string, 'null']
+      additionalProperties: false
+
+    AsyncState:
+      type: string
+      enum: [queued, processing, completed, failed, cancelled]
+
+    CvScan:
+      type: object
+      required: [id, file_id, status, schema_version, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        file_id:
+          type: string
+          format: uuid
+        cv_id:
+          type: [string, 'null']
+          format: uuid
+        status:
+          type: string
+          enum: [queued, extracting, draft_ready, confirmed, validation_failed, extraction_failed, cancelled]
+        schema_version:
+          type: string
+        draft_id:
+          type: [string, 'null']
+          format: uuid
+        error:
+          anyOf:
+            - $ref: '#/components/schemas/ApiError'
+            - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: [string, 'null']
+          format: date-time
+
+    CvContent:
+      type: object
+      required: [basics, skills, education, experience, projects]
+      properties:
+        basics:
+          type: object
+          properties:
+            full_name:
+              type: [string, 'null']
+            email:
+              type: [string, 'null']
+            phone:
+              type: [string, 'null']
+            location:
+              type: [string, 'null']
+            summary:
+              type: [string, 'null']
+            links:
+              type: array
+              items:
+                type: string
+                format: uri
+        skills:
+          type: array
+          items:
+            type: object
+            required: [name]
+            properties:
+              name:
+                type: string
+              level:
+                type: [string, 'null']
+              evidence:
+                type: array
+                items:
+                  type: string
+        education:
+          type: array
+          items:
+            $ref: '#/components/schemas/CvSectionEntry'
+        experience:
+          type: array
+          items:
+            $ref: '#/components/schemas/CvSectionEntry'
+        projects:
+          type: array
+          items:
+            $ref: '#/components/schemas/CvSectionEntry'
+        certifications:
+          type: array
+          items:
+            $ref: '#/components/schemas/CvSectionEntry'
+        languages:
+          type: array
+          items:
+            type: object
+            required: [name]
+            properties:
+              name:
+                type: string
+              proficiency:
+                type: [string, 'null']
+      additionalProperties: false
+
+    CvSectionEntry:
+      type: object
+      required: [id, title]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        organization:
+          type: [string, 'null']
+        location:
+          type: [string, 'null']
+        start_date:
+          type: [string, 'null']
+        end_date:
+          type: [string, 'null']
+        description:
+          type: [string, 'null']
+        highlights:
+          type: array
+          items:
+            type: string
+        technologies:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+
+    CvWarning:
+      type: object
+      required: [code, path, message]
+      properties:
+        code:
+          type: string
+        path:
+          type: string
+        message:
+          type: string
+        confidence:
+          type: [number, 'null']
+          minimum: 0
+          maximum: 1
+
+    CvDraft:
+      type: object
+      required: [id, scan_id, revision, schema_version, status, content, warnings, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        scan_id:
+          type: string
+          format: uuid
+        revision:
+          type: integer
+          minimum: 1
+        schema_version:
+          type: string
+        status:
+          type: string
+          enum: [editable, confirmed, discarded]
+        content:
+          $ref: '#/components/schemas/CvContent'
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/CvWarning'
+        updated_at:
+          type: string
+          format: date-time
+
+    CvDraftPatch:
+      type: object
+      properties:
+        content:
+          $ref: '#/components/schemas/CvContent'
+      additionalProperties: false
+
+    ConfirmCvDraftRequest:
+      type: object
+      required: [revision, title]
+      properties:
+        revision:
+          type: integer
+          minimum: 1
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+      additionalProperties: false
+
+    CvVersion:
+      type: object
+      required: [id, cv_id, version, schema_version, content, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        cv_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          minimum: 1
+        schema_version:
+          type: string
+        content:
+          $ref: '#/components/schemas/CvContent'
+        checksum:
+          type: string
+        active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    Cv:
+      type: object
+      required: [id, title, status, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        status:
+          type: string
+          enum: [active, archived, deleting]
+        active_version:
+          anyOf:
+            - $ref: '#/components/schemas/CvVersion'
+            - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CvPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Cv'
+        next_cursor:
+          type: [string, 'null']
+
+    CvAnalysis:
+      type: object
+      required: [id, cv_version_id, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        cv_version_id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/AsyncState'
+        scores:
+          type: object
+          additionalProperties:
+            type: number
+        findings:
+          type: array
+          items:
+            type: object
+            required: [category, severity, message]
+            properties:
+              category:
+                type: string
+              severity:
+                type: string
+                enum: [info, improvement, important]
+              message:
+                type: string
+              evidence:
+                type: array
+                items:
+                  type: string
+              actions:
+                type: array
+                items:
+                  type: string
+        created_at:
+          type: string
+          format: date-time
+
+    CreateInterviewRequest:
+      type: object
+      required: [cv_version_id, target_role, interview_type]
+      properties:
+        cv_version_id:
+          type: string
+          format: uuid
+        job_id:
+          type: [string, 'null']
+          format: uuid
+        target_role:
+          type: string
+          maxLength: 200
+        interview_type:
+          type: string
+          enum: [behavioral, technical, mixed]
+        language:
+          type: string
+          enum: [vi, en]
+        duration_minutes:
+          type: integer
+          minimum: 5
+          maximum: 90
+      additionalProperties: false
+
+    Interview:
+      type: object
+      required: [id, status, target_role, interview_type, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [created, ready, live, ending, evaluating, completed, interrupted, cancelled, evaluation_failed]
+        target_role:
+          type: string
+        interview_type:
+          type: string
+        cv_version_id:
+          type: string
+          format: uuid
+        job_id:
+          type: [string, 'null']
+          format: uuid
+        started_at:
+          type: [string, 'null']
+          format: date-time
+        ended_at:
+          type: [string, 'null']
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    InterviewPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Interview'
+        next_cursor:
+          type: [string, 'null']
+
+    RealtimeToken:
+      type: object
+      required: [token, websocket_url, expires_at]
+      properties:
+        token:
+          type: string
+          writeOnly: true
+        websocket_url:
+          type: string
+          format: uri
+        expires_at:
+          type: string
+          format: date-time
+
+    InterviewReport:
+      type: object
+      required: [id, interview_id, status, rubric_version, scores, strengths, gaps, actions]
+      properties:
+        id:
+          type: string
+          format: uuid
+        interview_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [processing, ready, failed]
+        rubric_version:
+          type: string
+        scores:
+          type: object
+          additionalProperties:
+            type: number
+        strengths:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvidenceFinding'
+        gaps:
+          type: array
+          items:
+            $ref: '#/components/schemas/EvidenceFinding'
+        actions:
+          type: array
+          items:
+            type: string
+        disclaimer:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    EvidenceFinding:
+      type: object
+      required: [message, evidence_event_ids]
+      properties:
+        message:
+          type: string
+        evidence_event_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+
+    RemoteMode:
+      type: string
+      enum: [onsite, hybrid, remote, unknown]
+
+    JobSourceReference:
+      type: object
+      required: [source, url, last_checked_at, verification_status]
+      properties:
+        source:
+          type: string
+        source_job_id:
+          type: [string, 'null']
+        url:
+          type: string
+          format: uri
+        last_checked_at:
+          type: string
+          format: date-time
+        verification_status:
+          type: string
+          enum: [verified, unverified, stale, unavailable]
+
+    Job:
+      type: object
+      required: [id, title, company_name, remote_mode, status, sources, first_seen_at, last_seen_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        company_name:
+          type: string
+        location:
+          type: [string, 'null']
+        remote_mode:
+          $ref: '#/components/schemas/RemoteMode'
+        employment_type:
+          type: [string, 'null']
+        seniority:
+          type: [string, 'null']
+        salary:
+          anyOf:
+            - $ref: '#/components/schemas/Salary'
+            - type: 'null'
+        description:
+          type: [string, 'null']
+        description_completeness:
+          type: string
+          enum: [full, partial, unavailable]
+        skills:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [active, stale, expired, invalid]
+        sources:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/JobSourceReference'
+        first_seen_at:
+          type: string
+          format: date-time
+        last_seen_at:
+          type: string
+          format: date-time
+        verified_at:
+          type: [string, 'null']
+          format: date-time
+
+    Salary:
+      type: object
+      required: [currency]
+      properties:
+        minimum_minor:
+          type: [integer, 'null']
+          minimum: 0
+        maximum_minor:
+          type: [integer, 'null']
+          minimum: 0
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        period:
+          type: string
+          enum: [hour, month, year, unknown]
+
+    JobPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Job'
+        next_cursor:
+          type: [string, 'null']
+
+    CreateJobSearchRequest:
+      type: object
+      required: [query, mode]
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 500
+        mode:
+          type: string
+          enum: [indexed, live, hybrid]
+          default: hybrid
+        cv_version_id:
+          type: [string, 'null']
+          format: uuid
+        filters:
+          $ref: '#/components/schemas/JobSearchFilters'
+        maximum_results:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      additionalProperties: false
+
+    JobSearchFilters:
+      type: object
+      properties:
+        locations:
+          type: array
+          items:
+            type: string
+        remote_modes:
+          type: array
+          items:
+            $ref: '#/components/schemas/RemoteMode'
+        employment_types:
+          type: array
+          items:
+            type: string
+        skills:
+          type: array
+          items:
+            type: string
+        verified_only:
+          type: boolean
+          default: true
+      additionalProperties: false
+
+    JobSearchRun:
+      type: object
+      required: [id, status, mode, query, progress, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [queued, searching, verifying, ranking, completed, failed, cancelled]
+        mode:
+          type: string
+          enum: [indexed, live, hybrid]
+        query:
+          type: string
+        progress:
+          type: object
+          properties:
+            sources_completed:
+              type: integer
+            jobs_discovered:
+              type: integer
+            jobs_verified:
+              type: integer
+            results_ready:
+              type: integer
+        degraded_reasons:
+          type: array
+          items:
+            type: string
+        events_url:
+          type: string
+          format: uri-reference
+        results_url:
+          type: string
+          format: uri-reference
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: [string, 'null']
+          format: date-time
+
+    JobMatch:
+      type: object
+      required: [job, rank, score, reasons, gaps]
+      properties:
+        job:
+          $ref: '#/components/schemas/Job'
+        rank:
+          type: integer
+          minimum: 1
+        score:
+          type: number
+          minimum: 0
+          maximum: 1
+        reasons:
+          type: array
+          items:
+            type: string
+        gaps:
+          type: array
+          items:
+            type: string
+        explanation_status:
+          type: string
+          enum: [not_requested, processing, ready, failed]
+
+    JobMatchPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobMatch'
+        next_cursor:
+          type: [string, 'null']
+
+    JobInteractionRequest:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [viewed, saved, dismissed, reported]
+        reason:
+          type: [string, 'null']
+          maxLength: 500
+      additionalProperties: false
+
+    JobInteraction:
+      type: object
+      required: [id, job_id, type, occurred_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        job_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+        reason:
+          type: [string, 'null']
+        occurred_at:
+          type: string
+          format: date-time
+
+    CreateApplicationRequest:
+      type: object
+      required: [job_id, status]
+      properties:
+        job_id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/ApplicationStatus'
+        applied_at:
+          type: [string, 'null']
+          format: date-time
+        note:
+          type: [string, 'null']
+          maxLength: 2000
+      additionalProperties: false
+
+    ApplicationPatch:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/ApplicationStatus'
+        note:
+          type: [string, 'null']
+          maxLength: 2000
+      additionalProperties: false
+
+    ApplicationStatus:
+      type: string
+      enum: [planned, applied, screening, interviewing, offered, accepted, rejected, withdrawn]
+
+    JobApplication:
+      type: object
+      required: [id, job, status, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        job:
+          $ref: '#/components/schemas/Job'
+        status:
+          $ref: '#/components/schemas/ApplicationStatus'
+        applied_at:
+          type: [string, 'null']
+          format: date-time
+        note:
+          type: [string, 'null']
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ApplicationPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/JobApplication'
+        next_cursor:
+          type: [string, 'null']
+
+    CreateRecommendationRequest:
+      type: object
+      properties:
+        cv_version_id:
+          type: [string, 'null']
+          format: uuid
+        search_run_id:
+          type: [string, 'null']
+          format: uuid
+        maximum_results:
+          type: integer
+          minimum: 1
+          maximum: 50
+          default: 20
+      additionalProperties: false
+
+    RecommendationRun:
+      type: object
+      required: [id, status, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/AsyncState'
+        candidate_profile_version:
+          type: [string, 'null']
+        created_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: [string, 'null']
+          format: date-time
+
+    Plan:
+      type: object
+      required: [id, name, prices, entitlements]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        prices:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlanPrice'
+        entitlements:
+          type: object
+          additionalProperties: true
+
+    PlanPrice:
+      type: object
+      required: [id, amount_minor, currency, interval]
+      properties:
+        id:
+          type: string
+        amount_minor:
+          type: integer
+          minimum: 0
+        currency:
+          type: string
+          pattern: '^[A-Z]{3}$'
+        interval:
+          type: string
+          enum: [month, year, one_time]
+
+    Subscription:
+      type: object
+      required: [status, entitlements]
+      properties:
+        id:
+          type: [string, 'null']
+          format: uuid
+        plan_id:
+          type: [string, 'null']
+        status:
+          type: string
+          enum: [none, trialing, active, past_due, cancelled, expired]
+        current_period_end:
+          type: [string, 'null']
+          format: date-time
+        entitlements:
+          type: object
+          additionalProperties: true
+
+    CreditAccount:
+      type: object
+      required: [balance, reserved, available, entries]
+      properties:
+        balance:
+          type: integer
+        reserved:
+          type: integer
+          minimum: 0
+        available:
+          type: integer
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreditLedgerEntry'
+        next_cursor:
+          type: [string, 'null']
+
+    CreditLedgerEntry:
+      type: object
+      required: [id, amount, type, occurred_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        amount:
+          type: integer
+        type:
+          type: string
+          enum: [grant, charge, refund, adjustment, expiry]
+        description:
+          type: string
+        reference_id:
+          type: [string, 'null']
+        occurred_at:
+          type: string
+          format: date-time
+
+    CreateCheckoutRequest:
+      type: object
+      required: [price_id, success_url, cancel_url]
+      properties:
+        price_id:
+          type: string
+        success_url:
+          type: string
+          format: uri
+        cancel_url:
+          type: string
+          format: uri
+      additionalProperties: false
+
+    RedirectSession:
+      type: object
+      required: [url, expires_at]
+      properties:
+        url:
+          type: string
+          format: uri
+        expires_at:
+          type: string
+          format: date-time
+
+    PrivacyRequest:
+      type: object
+      required: [id, type, status, requested_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [export, deletion]
+        status:
+          type: string
+          enum: [queued, processing, awaiting_retention, completed, failed, cancelled]
+        download:
+          anyOf:
+            - $ref: '#/components/schemas/SignedUrl'
+            - type: 'null'
+        retention_exceptions:
+          type: array
+          items:
+            type: string
+        requested_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: [string, 'null']
+          format: date-time
+
+    ModelConfiguration:
+      type: object
+      required: [id, purpose, version, status, provider, model, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        purpose:
+          type: string
+        version:
+          type: string
+        status:
+          type: string
+          enum: [draft, active, retired]
+        provider:
+          type: string
+        model:
+          type: string
+        output_schema_version:
+          type: [string, 'null']
+        created_at:
+          type: string
+          format: date-time
+
+    CreateModelConfigurationRequest:
+      type: object
+      required: [purpose, version, provider, model, configuration]
+      properties:
+        purpose:
+          type: string
+        version:
+          type: string
+        provider:
+          type: string
+          enum: [openai, gemini]
+        model:
+          type: string
+        configuration:
+          type: object
+          additionalProperties: true
+        output_schema_version:
+          type: [string, 'null']
+      additionalProperties: false
+
+    JobSource:
+      type: object
+      required: [id, key, name, status, quality_score]
+      properties:
+        id:
+          type: string
+          format: uuid
+        key:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+          enum: [active, degraded, disabled]
+        quality_score:
+          type: number
+          minimum: 0
+          maximum: 1
+        last_healthy_at:
+          type: [string, 'null']
+          format: date-time
+        stale_rate:
+          type: [number, 'null']
+          minimum: 0
+          maximum: 1
+
+    CreditAdjustmentRequest:
+      type: object
+      required: [user_id, amount, reason]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        amount:
+          type: integer
+          not:
+            const: 0
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 500
+        reference:
+          type: [string, 'null']
+      additionalProperties: false
+
+    BackgroundJob:
+      type: object
+      required: [id, type, queue, status, attempt, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        type:
+          type: string
+        queue:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, succeeded, failed, cancelled, dead_letter]
+        attempt:
+          type: integer
+          minimum: 0
+        max_attempts:
+          type: integer
+          minimum: 1
+        resource_type:
+          type: [string, 'null']
+        resource_id:
+          type: [string, 'null']
+        error_code:
+          type: [string, 'null']
+        created_at:
+          type: string
+          format: date-time
+        started_at:
+          type: [string, 'null']
+          format: date-time
+        finished_at:
+          type: [string, 'null']
+          format: date-time
+
+    BackgroundJobPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/BackgroundJob'
+        next_cursor:
+          type: [string, 'null']
