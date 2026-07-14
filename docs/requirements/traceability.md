@@ -42,7 +42,7 @@ Ma trận này nối requirement với API contract, logical entity và automate
 | NFR-DATA-005..006 | transactions/constraints, migration chain and reconciliation | Partial: migration from production-sized snapshot and provider reconciliation drill required |
 | NFR-SEC-001 | config/Docker boundary | Environment pending: TLS, encryption-at-rest and secret injection evidence |
 | NFR-SEC-002..004 | JWT validation, deny-by-default ownership/scope, Redis rate limits | Implemented in backend; identity/admin/provider tests |
-| NFR-SEC-005..008 | file state, Paddle signature/replay verification, payment redaction/retention and security process | Partial: malware engine and release security scan evidence required; payment backend controls implemented |
+| NFR-SEC-005..008 | file state/promotion, Paddle signature/replay verification, payment redaction/retention, safe validation/error persistence and security process | <code>test_product_file_security.py</code>, <code>test_payment_adapter.py</code>, <code>test_error_safety.py</code>; partial: malware engine and release security scan evidence required |
 | NFR-PRIV-001..004, NFR-PRIV-006 | consent, minimization/provider boundary, export/delete and admin masking/audit | Implemented in backend; privacy/identity/admin tests |
 | NFR-PRIV-005 | retention workflow | Partial: scheduler and backup expiration evidence required |
 | NFR-OBS-001..003, NFR-OBS-006 | correlation, Prometheus/provider metrics, structured events and audit | Implemented in backend; contract/resilience/admin tests |

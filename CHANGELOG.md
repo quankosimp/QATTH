@@ -29,6 +29,7 @@ Tất cả thay đổi đáng chú ý của QATTH được ghi lại trong file 
 - Distributed rate limiting now uses atomic Redis Lua buckets for trusted client IP, principal and normalized action, with lower AI-cost quotas and production fail-closed behavior.
 - Production startup now fails fast when malware scanning, privacy encryption or Paddle configuration is missing or insecure.
 - Verified PDF uploads are promoted from expiring staging keys to server-only clean keys, preventing a still-valid upload URL from replacing content after malware scanning.
+- Product workers, payment inboxes and dispatch outboxes now persist only bounded error codes and fixed safe messages; validation and unhandled error boundaries omit submitted values and exception text.
 - Interview credits are reserved at realtime token issuance and captured only after the first successful Gemini output delivery; timeout reconciliation now follows CV/interview outcomes.
 - Client checkout redirect URLs are retained only by QATTH and are no longer copied into provider metadata.
 - Payment reversal dùng provider transaction reference, hỗ trợ partial reversal và chỉ đưa account vào review khi phát sinh debt.

@@ -26,6 +26,19 @@ class AppError(Exception):
         self.retryable = retryable
 
 
+def safe_error_code(error: Exception, fallback_code: str) -> str:
+    candidate = error.code if isinstance(error, AppError) else fallback_code
+    if not isinstance(candidate, str) or not 1 <= len(candidate) <= 120:
+        return fallback_code
+    if any(not (character.isupper() or character.isdigit() or character == "_") for character in candidate):
+        return fallback_code
+    return candidate
+
+
+def safe_error_payload(error: Exception, fallback_code: str, message: str) -> dict[str, str]:
+    return {"code": safe_error_code(error, fallback_code), "message": message}
+
+
 def _request_id(request: Request) -> str:
     return getattr(request.state, "request_id", "unknown")
 
@@ -76,12 +89,21 @@ async def validation_error_handler(
         status_code=422,
         code="VALIDATION_ERROR",
         message="Request validation failed.",
-        details={"errors": exc.errors()},
+        details={
+            "errors": [
+                {
+                    "type": item.get("type", "validation_error"),
+                    "loc": list(item.get("loc", ())),
+                    "msg": item.get("msg", "Invalid value"),
+                }
+                for item in exc.errors()
+            ]
+        },
     )
 
 
 async def unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
-    logger.exception(
+    logger.error(
         "unhandled_request_error",
         request_id=_request_id(request),
         method=request.method,

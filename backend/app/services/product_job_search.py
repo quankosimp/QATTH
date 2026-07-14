@@ -147,7 +147,9 @@ class ProductJobSearchService:
 
             execute_product_job_search_task.delay(run_id)
         except Exception as exc:
-            dispatch.last_error = str(exc)[:1000]
+            from app.core.errors import safe_error_code
+
+            dispatch.last_error = safe_error_code(exc, "JOB_SEARCH_DISPATCH_FAILED")
             dispatch.available_at = _utcnow() + timedelta(
                 seconds=min(300, 2 ** min(dispatch.attempts, 8))
             )

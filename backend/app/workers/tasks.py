@@ -4,6 +4,7 @@ from sqlalchemy import select
 
 from app.core.celery_app import celery_app
 from app.core.db import SessionLocal
+from app.core.errors import safe_error_payload
 from app.models.db import BackgroundTask
 
 
@@ -87,7 +88,11 @@ def extract_product_cv_task(self, scan_id: str) -> dict:
         if scan is not None and ProductTaskLeaseService.owns(scan, lease_id):
             ProviderUsageService(db).failure(user_id=scan.user_id, provider="openai", purpose="cv_extraction", resource_type="cv_scan", resource_id=scan.id, error=exc)
             scan.status = "extraction_failed"
-            scan.error = {"code": "CV_EXTRACTION_FAILED", "message": str(exc)[:1000]}
+            scan.error = safe_error_payload(
+                exc,
+                "CV_EXTRACTION_FAILED",
+                "CV extraction failed. Retry after checking the source file.",
+            )
             scan.completed_at = datetime.now(UTC)
             ProductTaskLeaseService.clear(scan)
             db.commit()
@@ -153,7 +158,11 @@ def analyze_product_cv_task(self, analysis_id: str) -> dict:
         if analysis is not None and ProductTaskLeaseService.owns(analysis, lease_id):
             ProviderUsageService(db).failure(user_id=analysis.user_id, provider="openai", purpose="cv_analysis", resource_type="cv_analysis", resource_id=analysis.id, error=exc)
             analysis.status = "failed"
-            analysis.error = {"code": "CV_ANALYSIS_FAILED", "message": str(exc)[:1000]}
+            analysis.error = safe_error_payload(
+                exc,
+                "CV_ANALYSIS_FAILED",
+                "CV analysis failed. Retry the analysis later.",
+            )
             analysis.completed_at = datetime.now(UTC)
             ProductTaskLeaseService.clear(analysis)
             from app.services.product_billing import ProductBillingService
@@ -260,7 +269,11 @@ def evaluate_product_interview_task(self, report_id: str) -> dict:
         if report is not None and ProductTaskLeaseService.owns(report, lease_id):
             ProviderUsageService(db).failure(user_id=report.user_id, provider="openai", purpose="interview_evaluation", resource_type="interview_report", resource_id=report.id, error=exc)
             report.status = "failed"
-            report.error = {"code": "INTERVIEW_EVALUATION_FAILED", "message": str(exc)[:1000]}
+            report.error = safe_error_payload(
+                exc,
+                "INTERVIEW_EVALUATION_FAILED",
+                "Interview evaluation failed. Retry the evaluation later.",
+            )
             ProductTaskLeaseService.clear(report)
             interview = db.get(ProductInterview, report.interview_id)
             if interview is not None:
@@ -322,12 +335,8 @@ def execute_product_job_search_task(run_id: str) -> dict:
         db.rollback()
         run = db.get(JobSearchRun, run_id)
         if run is not None:
-            from app.core.errors import AppError
-
-            code = exc.code if isinstance(exc, AppError) else "JOB_SEARCH_FAILED"
-            message = exc.message if isinstance(exc, AppError) else "Job search execution failed"
             run.status = "failed"
-            run.error = {"code": code, "message": message}
+            run.error = safe_error_payload(exc, "JOB_SEARCH_FAILED", "Job search execution failed.")
             run.completed_at = datetime.now(UTC)
             db.commit()
             ProductJobSearchService(db).emit(run_id, "run.failed", run.error)
@@ -374,7 +383,11 @@ def execute_product_recommendation_task(run_id: str) -> dict:
         run = db.get(RecommendationRun, run_id)
         if run is not None:
             run.status = "failed"
-            run.error = {"code": "RECOMMENDATION_FAILED", "message": str(exc)[:1000]}
+            run.error = safe_error_payload(
+                exc,
+                "RECOMMENDATION_FAILED",
+                "Recommendation generation failed. Retry the run later.",
+            )
             run.completed_at = datetime.now(UTC)
             db.commit()
         raise
@@ -444,7 +457,11 @@ def execute_product_privacy_request_task(request_id: str) -> dict:
         privacy_request = db.get(PrivacyRequest, request_id)
         if privacy_request is not None:
             privacy_request.status = "failed"
-            privacy_request.error = {"code": "PRIVACY_REQUEST_FAILED", "message": str(exc)[:1000]}
+            privacy_request.error = safe_error_payload(
+                exc,
+                "PRIVACY_REQUEST_FAILED",
+                "Privacy request processing failed. Retry the request later.",
+            )
             privacy_request.lease_expires_at = None
             db.commit()
         raise

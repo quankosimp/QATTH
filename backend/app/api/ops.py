@@ -32,21 +32,21 @@ def readiness(
     try:
         db.execute(text("SELECT 1"))
         checks.append(ReadinessCheck(name="database", ok=True))
-    except Exception as exc:
-        checks.append(ReadinessCheck(name="database", ok=False, detail=str(exc)))
+    except Exception:
+        checks.append(ReadinessCheck(name="database", ok=False, detail="Unavailable"))
 
     checks.append(
         ReadinessCheck(
             name="upload_dir",
             ok=settings.upload_dir.exists(),
-            detail=str(settings.upload_dir),
+            detail="Available" if settings.upload_dir.exists() else "Missing",
         )
     )
     checks.append(
         ReadinessCheck(
             name="generated_dir",
             ok=settings.generated_dir.exists(),
-            detail=str(settings.generated_dir),
+            detail="Available" if settings.generated_dir.exists() else "Missing",
         )
     )
     checks.append(

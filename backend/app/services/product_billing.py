@@ -521,8 +521,14 @@ class ProductBillingService:
             self.db.rollback()
             inbox = self.db.scalar(select(PaymentEventInbox).where(PaymentEventInbox.provider == provider, PaymentEventInbox.provider_event_id == event.event_id))
             if inbox is not None:
+                from app.core.errors import safe_error_payload
+
                 inbox.status = "failed"
-                inbox.error = {"code": "PAYMENT_EVENT_FAILED", "message": str(exc)[:1000]}
+                inbox.error = safe_error_payload(
+                    exc,
+                    "PAYMENT_EVENT_FAILED",
+                    "Payment event processing failed. Reconciliation will retry it.",
+                )
                 self.db.commit()
             raise
         return inbox
@@ -583,8 +589,14 @@ class ProductBillingService:
                 )
             )
             if inbox is not None:
+                from app.core.errors import safe_error_payload
+
                 inbox.status = "failed"
-                inbox.error = {"code": "PAYMENT_RECONCILIATION_FAILED", "message": str(exc)[:1000]}
+                inbox.error = safe_error_payload(
+                    exc,
+                    "PAYMENT_RECONCILIATION_FAILED",
+                    "Payment reconciliation failed and will be retried.",
+                )
                 self.db.commit()
             raise
         return True
