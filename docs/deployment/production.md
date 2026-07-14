@@ -114,7 +114,7 @@ Production thiếu biến bắt buộc phải fail fast. Secret được inject 
 | APP_VERSION | No | Release identifier |
 | LOG_LEVEL | No | Structured log threshold |
 | PUBLIC_API_ORIGIN | No | Canonical external API origin |
-| ALLOWED_ORIGINS | No | Explicit CORS allowlist |
+| CORS_ORIGINS | No | Explicit HTTPS CORS allowlist |
 | TRUSTED_PROXY_CIDRS | No | Proxy chain accepted by application |
 | REQUEST_TIMEOUT_SECONDS | No | Default bounded request timeout |
 
@@ -127,12 +127,16 @@ Production thiếu biến bắt buộc phải fail fast. Secret được inject 
 | DATABASE_POOL_OVERFLOW | No | Bounded overflow |
 | REDIS_URL | Yes | TLS Redis connection |
 | REDIS_KEY_PREFIX | No | Environment isolation |
-| OBJECT_STORAGE_PROVIDER | No | Must be <code>r2</code> in target production |
+| STORAGE_BACKEND | No | Must be <code>r2</code> in target production |
 | R2_ENDPOINT_URL | No | Account endpoint |
 | R2_BUCKET | No | Private bucket |
 | R2_ACCESS_KEY_ID | Yes | Scoped object credential |
 | R2_SECRET_ACCESS_KEY | Yes | Scoped object credential |
 | SIGNED_URL_TTL_SECONDS | No | Short-lived URL policy |
+| PRIVACY_EXPORT_ENCRYPTION_KEY | Yes | URL-safe base64 encoded 32-byte export encryption key |
+| CLAMAV_HOST | No | Required malware scanner host |
+| CLAMAV_PORT | No | ClamAV INSTREAM port, default 3310 |
+| CLAMAV_TIMEOUT_SECONDS | No | Bounded scanner timeout |
 
 R2 credential phải được scope tối thiểu theo bucket/action. Frontend không nhận R2 credential; chỉ nhận signed URL.
 
@@ -186,10 +190,14 @@ Domain values không chứa scheme/path/port. Thay allowlist cần product/legal
 
 | Variable | Secret | Purpose |
 |---|---:|---|
-| PAYMENT_PROVIDER | No | Adapter selection |
+| PAYMENT_PROVIDER | No | Must be <code>paddle</code> in production |
 | PAYMENT_API_KEY | Yes | Provider credential |
 | PAYMENT_WEBHOOK_SECRET | Yes | Raw-body signature verification |
-| PAYMENT_SUCCESS_URL_ALLOWLIST | No | Redirect policy |
+| PAYMENT_SUCCESS_URL_ALLOWLIST | No | Credential-free HTTPS redirect policy |
+| PAYMENT_PADDLE_API_BASE_URL | No | Live API must be <code>https://api.paddle.com</code> |
+| PAYMENT_PADDLE_PRICE_IDS | No | Internal offer code to Paddle <code>pri_</code> mapping |
+| PAYMENT_WEBHOOK_TOLERANCE_SECONDS | No | Signature replay window |
+| PAYMENT_HTTP_TIMEOUT_SECONDS | No | Bounded Paddle API timeout |
 
 ### Observability
 
@@ -343,7 +351,7 @@ Feature flag phù hợp cho live web search, model version, reranker và billing
 | Hybrid job search, verification, rerank và provenance | Implemented, provider evidence pending | Backend; staging source/search quality report |
 | Credit ledger, reservation/reconciliation và dual control | Implemented | Backend contract/concurrency tests |
 | Gemini Live realtime/reconnect/backpressure | Partial | Backend + deployment; staging voice and WebSocket load evidence |
-| Payment checkout và signed webhook | Partial | Backend + payment owner; provider certification/replay evidence |
+| Payment checkout, signed webhook, retention và reconciliation | Implemented, provider evidence pending | Backend + payment owner; Paddle sandbox certification/replay evidence |
 | R2, managed Redis/PostgreSQL integration | Environment pending | Deployment provisions; backend runs integration suite/config validation |
 | Logs/metrics/traces, dashboards và alerts | Instrumented, platform pending | Backend emits telemetry; deployment owns collector/dashboard/alerts |
 | Load, security, migration và restore acceptance | Evidence pending | Joint release gate; results linked from release record |

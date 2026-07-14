@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import socket
 import struct
 from datetime import datetime, timedelta, timezone
@@ -212,15 +211,18 @@ class ProductFileService:
 
     @staticmethod
     def _scan_malware(content: bytes) -> None:
-        host = os.getenv("CLAMAV_HOST", "")
-        environment = str(getattr(get_settings(), "app_env", "local")).lower()
+        settings = get_settings()
+        host = settings.clamav_host or ""
+        environment = settings.app_env.lower()
         if not host:
             if environment not in {"local", "development", "test"}:
                 raise AppError(503, "MALWARE_SCANNER_UNAVAILABLE", "Malware scanner is required", retryable=True)
             return
-        port = int(os.getenv("CLAMAV_PORT", "3310"))
         try:
-            with socket.create_connection((host, port), timeout=10) as client:
+            with socket.create_connection(
+                (host, settings.clamav_port),
+                timeout=settings.clamav_timeout_seconds,
+            ) as client:
                 client.sendall(b"zINSTREAM\0")
                 for offset in range(0, len(content), 65536):
                     chunk = content[offset : offset + 65536]

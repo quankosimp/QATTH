@@ -1,6 +1,9 @@
+import base64
+import binascii
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -41,6 +44,9 @@ class Settings(BaseSettings):
     privacy_export_ttl_hours: int = 24
     privacy_export_max_bytes: int = 200_000_000
     privacy_export_encryption_key: str | None = None
+    clamav_host: str | None = None
+    clamav_port: int = 3310
+    clamav_timeout_seconds: float = 10.0
 
     rate_limit_enabled: bool = True
     rate_limit_requests_per_minute: int = 120
@@ -120,6 +126,8 @@ class Settings(BaseSettings):
             raise ValueError("RATE_LIMIT_REQUESTS_PER_MINUTE must be positive.")
         if self.signed_url_ttl_seconds < 30:
             raise ValueError("SIGNED_URL_TTL_SECONDS must be at least 30 seconds.")
+        if not 1 <= self.clamav_port <= 65_535 or self.clamav_timeout_seconds <= 0:
+            raise ValueError("ClamAV port and timeout must be positive and valid.")
         if self.legacy_api_prefix == self.api_v1_prefix:
             raise ValueError("LEGACY_API_PREFIX must not overlap API_V1_PREFIX.")
         if not self.product_processing_policy_version.strip():
@@ -144,6 +152,10 @@ class Settings(BaseSettings):
             raise ValueError("GEMINI_LIVE_AUDIO_CHUNK_MAX_BYTES must be between 3200 and 65536.")
         if self.openai_daily_budget_minor < 1 or self.openai_monthly_budget_minor < 1:
             raise ValueError("OpenAI provider budgets must be positive.")
+        if not 1 <= self.payment_webhook_tolerance_seconds <= 300:
+            raise ValueError("PAYMENT_WEBHOOK_TOLERANCE_SECONDS must be between 1 and 300.")
+        if self.payment_http_timeout_seconds <= 0:
+            raise ValueError("PAYMENT_HTTP_TIMEOUT_SECONDS must be positive.")
         if len(self.job_search_country_code) != 2 or not self.job_search_country_code.isalpha():
             raise ValueError("JOB_SEARCH_COUNTRY_CODE must be an ISO 3166-1 alpha-2 code.")
         allowed = {item.casefold() for item in self.job_search_allowed_domains}
@@ -171,6 +183,8 @@ class Settings(BaseSettings):
             ("R2_BUCKET", self.r2_bucket),
             ("R2_ACCESS_KEY_ID", self.r2_access_key_id),
             ("R2_SECRET_ACCESS_KEY", self.r2_secret_access_key),
+            ("PRIVACY_EXPORT_ENCRYPTION_KEY", self.privacy_export_encryption_key),
+            ("CLAMAV_HOST", self.clamav_host),
             ("OIDC_ISSUER", self.oidc_issuer),
             ("OIDC_AUDIENCE", self.oidc_audience),
             ("OPENAI_API_KEY", self.openai_api_key),
@@ -178,8 +192,46 @@ class Settings(BaseSettings):
         ):
             if not value:
                 errors.append(f"{name} is required in production")
+        if self.privacy_export_encryption_key:
+            try:
+                padding = "=" * (-len(self.privacy_export_encryption_key) % 4)
+                decoded_key = base64.urlsafe_b64decode(self.privacy_export_encryption_key + padding)
+                if len(decoded_key) != 32:
+                    errors.append("PRIVACY_EXPORT_ENCRYPTION_KEY must encode exactly 32 bytes")
+            except (ValueError, binascii.Error):
+                errors.append("PRIVACY_EXPORT_ENCRYPTION_KEY must be URL-safe base64")
+        if self.payment_provider != "paddle":
+            errors.append("PAYMENT_PROVIDER must be paddle in production")
+        for name, value in (
+            ("PAYMENT_API_KEY", self.payment_api_key),
+            ("PAYMENT_WEBHOOK_SECRET", self.payment_webhook_secret),
+        ):
+            if not value:
+                errors.append(f"{name} is required in production")
+        if self.payment_paddle_api_base_url != "https://api.paddle.com":
+            errors.append("PAYMENT_PADDLE_API_BASE_URL must use the live Paddle API in production")
+        if not self.payment_paddle_price_ids:
+            errors.append("PAYMENT_PADDLE_PRICE_IDS is required in production")
+        elif any(not code.strip() or not price_id.startswith("pri_") for code, price_id in self.payment_paddle_price_ids.items()):
+            errors.append("PAYMENT_PADDLE_PRICE_IDS must map non-empty offer codes to Paddle pri_ IDs")
+        if not self.payment_success_url_allowlist:
+            errors.append("PAYMENT_SUCCESS_URL_ALLOWLIST is required in production")
+        for redirect_url in self.payment_success_url_allowlist:
+            parsed = urlsplit(redirect_url)
+            if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+                errors.append("PAYMENT_SUCCESS_URL_ALLOWLIST entries must be credential-free HTTPS URLs")
+                break
+        for name, value in (
+            ("PUBLIC_API_ORIGIN", self.public_api_origin),
+            ("OIDC_ISSUER", self.oidc_issuer or ""),
+            ("R2_ENDPOINT_URL", self.r2_endpoint_url or ""),
+        ):
+            if urlsplit(value).scheme != "https":
+                errors.append(f"{name} must use HTTPS in production")
         if "*" in self.cors_origins:
             errors.append("Wildcard CORS is not allowed in production")
+        if any(urlsplit(origin).scheme != "https" for origin in self.cors_origins):
+            errors.append("CORS_ORIGINS must contain only HTTPS origins in production")
         if self.job_search_provider == "openai_web_search" and not self.job_search_allowed_domains:
             errors.append("JOB_SEARCH_ALLOWED_DOMAINS is required for OpenAI web search in production")
         if errors:
