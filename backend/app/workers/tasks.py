@@ -481,6 +481,18 @@ def publish_product_privacy_dispatches_task() -> dict:
         db.close()
 
 
+@celery_app.task(name="product.ops.publish_retries")
+def publish_product_operational_job_retries_task() -> dict:
+    from app.services.product_admin_ops import ProductAdminOpsService
+
+    db = SessionLocal()
+    try:
+        published = ProductAdminOpsService(db).publish_pending_retries()
+        return {"status": "completed", "dispatches_published": published}
+    finally:
+        db.close()
+
+
 @celery_app.task(name="product.privacy.cleanup_artifacts")
 def cleanup_product_privacy_artifacts_task() -> dict:
     from app.services.product_privacy import ProductPrivacyService

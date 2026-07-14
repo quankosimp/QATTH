@@ -85,6 +85,7 @@ from app.models.product_admin_ops import (
     AuditChainHead,
     ModelConfiguration,
     OperationalJob,
+    OperationalJobDispatch,
     PrivilegedAuditEvent,
     PrivilegedCommand,
 )

@@ -70,6 +70,24 @@ class OperationalJob(Base):
     updated_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
 
 
+class OperationalJobDispatch(Base):
+    __tablename__ = "product_operational_job_dispatches"
+    __table_args__ = (Index("ix_product_operational_job_dispatches_pending", "status", "available_at"),)
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    job_id = Column(String(36), ForeignKey("product_operational_jobs.id", ondelete="CASCADE"), nullable=False, unique=True)
+    task_name = Column(String(160), nullable=False)
+    queue = Column(String(80), nullable=False, default="celery")
+    args_payload = Column(JSON, nullable=False, default=list)
+    correlation_id = Column(String(128), nullable=False)
+    status = Column(String(24), nullable=False, default="pending")
+    attempts = Column(Integer, nullable=False, default=0)
+    available_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    last_error = Column(String(120), nullable=True)
+    published_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
 class PrivilegedCommand(Base):
     __tablename__ = "product_privileged_commands"
     __table_args__ = (UniqueConstraint("actor_user_id", "command_type", "idempotency_key", name="uq_product_privileged_command_idempotency"),)

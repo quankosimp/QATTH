@@ -117,7 +117,7 @@ def resolve_moderation_case(case_id: str, payload: ResolveModerationCaseRequest,
 
 @router.get("/ops/background-jobs", response_model=APIResponse[BackgroundJobPage])
 def list_background_jobs(request: Request, job_status: str | None = Query(default=None, alias="status"), cursor: str | None = None, limit: int = Query(default=20, ge=1, le=100), current: ProductCurrentUser = Depends(ops_read), db: Session = Depends(get_db)):
-    return make_response(ProductAdminOpsService(db).background_jobs(job_status, cursor, limit), request=request)
+    return make_response(ProductAdminOpsService(db).background_jobs(current, _context(request), job_status, cursor, limit), request=request)
 
 
 @router.post("/ops/background-jobs/{job_id}/retry", response_model=APIResponse[BackgroundJobView], status_code=status.HTTP_202_ACCEPTED)

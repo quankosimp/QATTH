@@ -18,7 +18,7 @@ from app.models.db import AuthToken, User
 from app.models.identity import AccountStatusEvent, UserProductProfile, UserSession
 from app.models.product_cv import CvAnalysis, CvScan, ProductCV
 from app.models.product_interview import ProductInterview, ProductInterviewReport
-from app.models.product_admin_ops import AuditChainHead, ModelConfiguration, OperationalJob, PrivilegedAuditEvent, PrivilegedCommand
+from app.models.product_admin_ops import AuditChainHead, ModelConfiguration, OperationalJob, OperationalJobDispatch, PrivilegedAuditEvent, PrivilegedCommand
 from app.models.product_jobs import JobSearchRun, JobSource, JobSourceRecord, ProductJob
 from app.models.product_privacy import PrivacyRequest
 from app.models.product_recommendations import JobApplication, JobModerationCase, RecommendationRun
@@ -55,6 +55,14 @@ class ProductAdminOpsService:
         "job_search": "openai",
         "job_embedding": "openai",
         "job_explanation": "openai",
+    }
+    retryable_tasks = {
+        "product.cv.extract",
+        "product.cv.analyze",
+        "product.interview.evaluate",
+        "product.jobs.search",
+        "product.recommendations.generate",
+        "product.privacy.execute",
     }
 
     def __init__(self, db: Session) -> None:
@@ -335,7 +343,7 @@ class ProductAdminOpsService:
     def moderation_view(item: JobModerationCase) -> ModerationCaseView:
         return ModerationCaseView(id=item.id, job_id=item.job_id, reporter_user_id=item.reporter_user_id, reason_code=item.reason_code, details=item.details, status=item.status, assigned_to_user_id=item.assigned_to_user_id, resolution=item.resolution, created_at=item.created_at, updated_at=item.updated_at)
 
-    def background_jobs(self, job_status: str | None, cursor: str | None, limit: int) -> BackgroundJobPage:
+    def background_jobs(self, current: ProductCurrentUser, context: dict[str, Any], job_status: str | None, cursor: str | None, limit: int) -> BackgroundJobPage:
         statement = select(OperationalJob)
         if job_status:
             statement = statement.where(OperationalJob.status == job_status)
@@ -345,6 +353,8 @@ class ProductAdminOpsService:
         records = list(self.db.scalars(statement.order_by(OperationalJob.created_at.desc(), OperationalJob.id.desc()).limit(limit + 1)))
         has_more = len(records) > limit
         records = records[:limit]
+        self._audit(current, "background_job.list", "background_job", None, None, context, {"status": job_status, "result_count": len(records)})
+        self.db.commit()
         return BackgroundJobPage(items=[self.job_view(item) for item in records], next_cursor=self._encode_cursor(records[-1].created_at, records[-1].id) if has_more and records else None)
 
     def retry_job(self, current: ProductCurrentUser, job_id: str, payload: RetryBackgroundJobRequest, idempotency_key: str, context: dict[str, Any]) -> OperationalJob:
@@ -358,17 +368,54 @@ class ProductAdminOpsService:
             raise AppError(409, "BACKGROUND_JOB_NOT_RETRYABLE", "Only failed background jobs can be retried")
         if job.attempt >= job.max_attempts:
             raise AppError(409, "BACKGROUND_JOB_ATTEMPTS_EXHAUSTED", "Background job retry limit has been reached")
-        result = celery_app.send_task(job.task_name, args=list(job.args_payload or []), queue=job.queue, headers={"retry_of": job.id, "request_id": context.get("request_id")})
-        retried = self.db.get(OperationalJob, result.id)
-        if retried is None:
-            retried = OperationalJob(id=result.id, task_name=job.task_name, queue=job.queue, status="queued", attempt=job.attempt + 1, max_attempts=job.max_attempts, resource_type=job.resource_type, resource_id=job.resource_id, args_payload=job.args_payload or [], request_id=context.get("request_id"), parent_job_id=job.id)
-            self.db.add(retried)
-            self.db.flush()
+        if job.task_name not in self.retryable_tasks:
+            raise AppError(409, "BACKGROUND_JOB_TASK_NOT_RETRYABLE", "This background job type is not manually retryable")
+        args_payload = list(job.args_payload or [])
+        if any(value == "<redacted>" for value in args_payload):
+            raise AppError(409, "BACKGROUND_JOB_ARGUMENTS_REDACTED", "This job cannot be retried because its arguments are unavailable")
+        from app.core.correlation import current_correlation_id
+
+        correlation_id = str(context.get("request_id") or current_correlation_id())
+        retried = OperationalJob(id=str(__import__("uuid").uuid4()), task_name=job.task_name, queue=job.queue, status="queued", attempt=job.attempt + 1, max_attempts=job.max_attempts, resource_type=job.resource_type, resource_id=job.resource_id, args_payload=args_payload, request_id=correlation_id, parent_job_id=job.id)
+        self.db.add(retried)
+        self.db.flush()
+        self.db.add(OperationalJobDispatch(job_id=retried.id, task_name=retried.task_name, queue=retried.queue, args_payload=args_payload, correlation_id=correlation_id))
         self._complete_command(command, "background_job", retried.id, {"id": retried.id})
         self._audit(current, "background_job.retry", "background_job", job.id, payload.reason, context, {"new_job_id": retried.id, "attempt": retried.attempt})
         self.db.commit()
         self.db.refresh(retried)
+        self.publish_retry(retried.id)
         return retried
+
+    def publish_retry(self, job_id: str) -> bool:
+        dispatch = self.db.scalar(select(OperationalJobDispatch).where(OperationalJobDispatch.job_id == job_id).with_for_update())
+        if dispatch is None or dispatch.status == "published":
+            return True
+        dispatch.attempts += 1
+        try:
+            celery_app.send_task(
+                dispatch.task_name,
+                args=list(dispatch.args_payload or []),
+                queue=dispatch.queue,
+                task_id=dispatch.job_id,
+                headers={"retry_of": self.db.get(OperationalJob, dispatch.job_id).parent_job_id, "request_id": dispatch.correlation_id},
+            )
+        except Exception as exc:
+            from app.core.errors import safe_error_code
+
+            dispatch.last_error = safe_error_code(exc, "BACKGROUND_JOB_DISPATCH_FAILED")
+            dispatch.available_at = _utcnow() + timedelta(seconds=min(300, 2 ** min(dispatch.attempts, 8)))
+            self.db.commit()
+            return False
+        dispatch.status = "published"
+        dispatch.published_at = _utcnow()
+        dispatch.last_error = None
+        self.db.commit()
+        return True
+
+    def publish_pending_retries(self, limit: int = 100) -> int:
+        dispatches = list(self.db.scalars(select(OperationalJobDispatch).where(OperationalJobDispatch.status == "pending", OperationalJobDispatch.available_at <= _utcnow()).order_by(OperationalJobDispatch.created_at).limit(limit)))
+        return sum(1 for item in dispatches if self.publish_retry(item.job_id))
 
     @staticmethod
     def job_view(job: OperationalJob) -> BackgroundJobView:
@@ -388,7 +435,7 @@ class ProductAdminOpsService:
         since = _utcnow() - timedelta(hours=24)
         failed = self.db.scalar(select(func.count()).select_from(OperationalJob).where(OperationalJob.status.in_(["failed", "dead_letter"]), OperationalJob.created_at >= since)) or 0
         pending = self.db.scalar(select(func.count()).select_from(OperationalJob).where(OperationalJob.status.in_(["queued", "running"]))) or 0
-        dispatch_tables = ["product_job_search_dispatches", "product_recommendation_dispatches", "product_privacy_dispatches"]
+        dispatch_tables = ["product_job_search_dispatches", "product_recommendation_dispatches", "product_privacy_dispatches", "product_operational_job_dispatches"]
         pending_dispatches = 0
         for table_name in dispatch_tables:
             table = OperationalJob.metadata.tables.get(table_name)

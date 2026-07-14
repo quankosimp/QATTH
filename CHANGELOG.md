@@ -32,6 +32,7 @@ Tất cả thay đổi đáng chú ý của QATTH được ghi lại trong file 
 - Product workers, payment inboxes and dispatch outboxes now persist only bounded error codes and fixed safe messages; validation and unhandled error boundaries omit submitted values and exception text.
 - Job search, recommendation and privacy runs now persist the originating correlation ID and propagate it through Celery headers during immediate publish or later outbox recovery.
 - Production readiness now rejects incompatible database revisions and unavailable Redis, queue, private object storage or malware-scanner dependencies; startup also enforces the schema revision gate.
+- Admin background-job retry now commits an idempotent command, audit event, retry job and dispatch before broker publication; a periodic publisher recovers broker failures without duplicating the retry command.
 - Interview credits are reserved at realtime token issuance and captured only after the first successful Gemini output delivery; timeout reconciliation now follows CV/interview outcomes.
 - Client checkout redirect URLs are retained only by QATTH and are no longer copied into provider metadata.
 - Payment reversal dùng provider transaction reference, hỗ trợ partial reversal và chỉ đưa account vào review khi phát sinh debt.
