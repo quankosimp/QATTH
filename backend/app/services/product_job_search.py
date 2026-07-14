@@ -46,6 +46,7 @@ from app.services.openai_jobs import OpenAIJobsAdapter
 from app.services.object_storage import ObjectStorage
 from app.services.safe_job_fetch import SafeJobFetcher
 from app.services.identity import IdentityService
+from app.services.provider_usage import ProviderUsageService
 
 
 def _utcnow() -> datetime:
@@ -190,6 +191,14 @@ class ProductJobSearchService:
         if run.mode in {"live", "hybrid"}:
             try:
                 jobs, provider = OpenAIJobsAdapter().live_search(run.query_text, run.filters, run.maximum_results)
+                ProviderUsageService(self.db).success(
+                    user_id=run.user_id,
+                    provider="openai",
+                    purpose="job_search",
+                    resource_type="job_search_run",
+                    resource_id=run.id,
+                    metadata=provider,
+                )
                 run.provider = "openai_web_search"
                 run.provider_run_id = provider.get("provider_run_id")
                 run.provider_model = provider.get("model")
@@ -229,6 +238,14 @@ class ProductJobSearchService:
                 run.progress = {**run.progress, "sources_completed": run.progress.get("sources_completed", 0) + 1, "jobs_verified": len([row for row in scored.values() if row["job"].verified_at])}
                 self.db.commit()
             except AppError as exc:
+                ProviderUsageService(self.db).failure(
+                    user_id=run.user_id,
+                    provider="openai",
+                    purpose="job_search",
+                    resource_type="job_search_run",
+                    resource_id=run.id,
+                    error=exc,
+                )
                 if run.mode == "live":
                     raise
                 self._degrade(run, exc.code)
@@ -651,6 +668,14 @@ class ProductJobSearchService:
             if index <= 3:
                 try:
                     explanation, provider = OpenAIJobsAdapter().explain(candidate.profile_json if candidate else {"query": run.query_text}, result.result_snapshot)
+                    ProviderUsageService(self.db).success(
+                        user_id=run.user_id,
+                        provider="openai",
+                        purpose="job_explanation",
+                        resource_type="job_search_result",
+                        resource_id=result.id,
+                        metadata=provider,
+                    )
                     result.explanation = explanation
                     result.reasons = explanation.get("reasons", result.reasons)
                     result.gaps = explanation.get("gaps", result.gaps)
@@ -662,7 +687,15 @@ class ProductJobSearchService:
                     result.explanation_provider_run_id = provider.get("provider_run_id")
                     result.explanation_usage = provider.get("usage", {})
                     result.explanation_estimated_cost_minor = provider.get("estimated_cost_minor")
-                except AppError:
+                except AppError as exc:
+                    ProviderUsageService(self.db).failure(
+                        user_id=run.user_id,
+                        provider="openai",
+                        purpose="job_explanation",
+                        resource_type="job_search_result",
+                        resource_id=result.id,
+                        error=exc,
+                    )
                     result.explanation_status = "failed"
                     self._degrade(run, "EXPLANATION_FAILED")
         self.db.commit()

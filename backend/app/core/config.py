@@ -60,6 +60,7 @@ class Settings(BaseSettings):
     openai_search_model: str = "gpt-5.6-luna"
     openai_timeout_seconds: int = 60
     openai_daily_budget_minor: int = 500_000
+    openai_monthly_budget_minor: int = 10_000_000
     provider_retry_attempts: int = 3
     provider_retry_base_delay_seconds: float = 0.25
     provider_retry_max_delay_seconds: float = 4.0
@@ -116,6 +117,8 @@ class Settings(BaseSettings):
             raise ValueError("PROVIDER_RETRY_ATTEMPTS must be positive.")
         if self.provider_circuit_failure_threshold < 1 or self.provider_bulkhead_limit < 1:
             raise ValueError("Provider circuit and bulkhead limits must be positive.")
+        if self.openai_daily_budget_minor < 1 or self.openai_monthly_budget_minor < 1:
+            raise ValueError("OpenAI provider budgets must be positive.")
 
         if self.app_env != "production":
             return self

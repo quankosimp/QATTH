@@ -31,6 +31,7 @@ def extract_product_cv_task(scan_id: str) -> dict:
     from app.services.object_storage import ObjectStorage
     from app.services.openai_cv import OpenAICvAdapter
     from app.services.product_cv import _checksum
+    from app.services.provider_usage import ProviderUsageService
 
     db = SessionLocal()
     try:
@@ -51,6 +52,14 @@ def extract_product_cv_task(scan_id: str) -> dict:
             raise RuntimeError("source file is not available")
         file_content = ObjectStorage().read(asset.object_key, asset.declared_size_bytes)
         extraction, provider = OpenAICvAdapter().extract(file_content, asset.original_filename, scan.locale_hint)
+        ProviderUsageService(db).success(
+            user_id=scan.user_id,
+            provider="openai",
+            purpose="cv_extraction",
+            resource_type="cv_scan",
+            resource_id=scan.id,
+            metadata=provider,
+        )
         serialized = CvContent.model_validate(extraction.content).model_dump(mode="json")
         draft = db.scalar(select(CvDraft).where(CvDraft.scan_id == scan.id))
         if draft is None:
@@ -74,6 +83,7 @@ def extract_product_cv_task(scan_id: str) -> dict:
         db.rollback()
         scan = db.get(CvScan, scan_id)
         if scan is not None:
+            ProviderUsageService(db).failure(user_id=scan.user_id, provider="openai", purpose="cv_extraction", resource_type="cv_scan", resource_id=scan.id, error=exc)
             scan.status = "extraction_failed"
             scan.error = {"code": "CV_EXTRACTION_FAILED", "message": str(exc)[:1000]}
             scan.completed_at = datetime.now(UTC)
@@ -88,6 +98,7 @@ def analyze_product_cv_task(analysis_id: str) -> dict:
     from app.models.product_cv import CvAnalysis, ProductCvVersion
     from app.schemas.product_cv import CvContent
     from app.services.openai_cv import OpenAICvAdapter
+    from app.services.provider_usage import ProviderUsageService
 
     db = SessionLocal()
     try:
@@ -105,6 +116,7 @@ def analyze_product_cv_task(analysis_id: str) -> dict:
         if version is None:
             raise RuntimeError("CV version was not found")
         output, provider = OpenAICvAdapter().analyze(CvContent.model_validate(version.content))
+        ProviderUsageService(db).success(user_id=analysis.user_id, provider="openai", purpose="cv_analysis", resource_type="cv_analysis", resource_id=analysis.id, metadata=provider)
         analysis.scores = output.scores
         analysis.findings = output.findings
         analysis.provider = "openai"
@@ -125,6 +137,7 @@ def analyze_product_cv_task(analysis_id: str) -> dict:
         db.rollback()
         analysis = db.get(CvAnalysis, analysis_id)
         if analysis is not None:
+            ProviderUsageService(db).failure(user_id=analysis.user_id, provider="openai", purpose="cv_analysis", resource_type="cv_analysis", resource_id=analysis.id, error=exc)
             analysis.status = "failed"
             analysis.error = {"code": "CV_ANALYSIS_FAILED", "message": str(exc)[:1000]}
             analysis.completed_at = datetime.now(UTC)
@@ -141,6 +154,7 @@ def analyze_product_cv_task(analysis_id: str) -> dict:
 def evaluate_product_interview_task(report_id: str) -> dict:
     from app.models.product_interview import ProductInterview, ProductInterviewEvent, ProductInterviewReport
     from app.services.openai_interview import OpenAIInterviewEvaluator
+    from app.services.provider_usage import ProviderUsageService
 
     db = SessionLocal()
     try:
@@ -183,6 +197,7 @@ def evaluate_product_interview_task(report_id: str) -> dict:
             interview.plan_snapshot,
             report.rubric_version,
         )
+        ProviderUsageService(db).success(user_id=report.user_id, provider="openai", purpose="interview_evaluation", resource_type="interview_report", resource_id=report.id, metadata=provider)
         known_event_ids = {event.id for event in events}
         for finding in [*output.strengths, *output.gaps]:
             if not finding.evidence_event_ids or not set(finding.evidence_event_ids).issubset(known_event_ids):
@@ -214,6 +229,7 @@ def evaluate_product_interview_task(report_id: str) -> dict:
         db.rollback()
         report = db.get(ProductInterviewReport, report_id)
         if report is not None:
+            ProviderUsageService(db).failure(user_id=report.user_id, provider="openai", purpose="interview_evaluation", resource_type="interview_report", resource_id=report.id, error=exc)
             report.status = "failed"
             report.error = {"code": "INTERVIEW_EVALUATION_FAILED", "message": str(exc)[:1000]}
             interview = db.get(ProductInterview, report.interview_id)

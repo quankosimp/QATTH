@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from fastapi import APIRouter, Depends, Header, Query, Request, status
 from sqlalchemy.orm import Session
 
@@ -17,6 +18,7 @@ from app.schemas.product_admin_ops import (
     ModelConfigurationView,
     ModerationCaseView,
     OpsDiagnosticsView,
+    ProviderUsageSummaryView,
     ResolveModerationCaseRequest,
     RetryBackgroundJobRequest,
     UpdateJobSourceRequest,
@@ -120,3 +122,19 @@ def retry_background_job(job_id: str, payload: RetryBackgroundJobRequest, reques
 @router.get("/ops/diagnostics", response_model=APIResponse[OpsDiagnosticsView])
 def get_ops_diagnostics(request: Request, current: ProductCurrentUser = Depends(ops_read), db: Session = Depends(get_db)):
     return make_response(ProductAdminOpsService(db).diagnostics(), request=request)
+
+
+@router.get("/ops/provider-usage", response_model=APIResponse[ProviderUsageSummaryView])
+def get_provider_usage(
+    request: Request,
+    provider: str | None = None,
+    purpose: str | None = None,
+    period_start: datetime | None = None,
+    period_end: datetime | None = None,
+    current: ProductCurrentUser = Depends(ops_read),
+    db: Session = Depends(get_db),
+):
+    return make_response(
+        ProductAdminOpsService(db).provider_usage_summary(provider, purpose, period_start, period_end),
+        request=request,
+    )

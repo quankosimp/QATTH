@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_admin_ops_contract_exposes_required_routes() -> None:
     source = (ROOT / "backend/app/api/v1/admin_ops.py").read_text()
-    for path in ("/admin/model-configurations", "/admin/job-sources", "/admin/users/{user_id}/status", "/ops/background-jobs", "/ops/background-jobs/{job_id}/retry"):
+    for path in ("/admin/model-configurations", "/admin/job-sources", "/admin/users/{user_id}/status", "/ops/background-jobs", "/ops/background-jobs/{job_id}/retry", "/ops/provider-usage"):
         assert path in source
     assert "require_product_scopes" in source
 

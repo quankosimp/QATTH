@@ -19,6 +19,7 @@ from app.models.identity import AccountStatusEvent, UserProductProfile, UserSess
 from app.models.product_admin_ops import AuditChainHead, ModelConfiguration, OperationalJob, PrivilegedAuditEvent, PrivilegedCommand
 from app.models.product_jobs import JobSource, JobSourceRecord, ProductJob
 from app.models.product_recommendations import JobModerationCase
+from app.models.provider_ops import ProviderUsageEvent
 from app.schemas.product_admin_ops import (
     AdminUserSummary,
     AccountStatusView,
@@ -29,6 +30,7 @@ from app.schemas.product_admin_ops import (
     ModelConfigurationView,
     ModerationCaseView,
     OpsDiagnosticsView,
+    ProviderUsageSummaryView,
     ResolveModerationCaseRequest,
     RetryBackgroundJobRequest,
     UpdateJobSourceRequest,
@@ -340,6 +342,41 @@ class ProductAdminOpsService:
                 pending_dispatches += self.db.scalar(select(func.count()).select_from(table).where(table.c.status == "pending")) or 0
         overall = "ok" if database == "ok" and redis_status == "ok" else "degraded"
         return OpsDiagnosticsView(status=overall, database=database, redis=redis_status, failed_jobs_24h=failed, pending_jobs=pending, pending_dispatches=pending_dispatches)
+
+    def provider_usage_summary(
+        self,
+        provider: str | None,
+        purpose: str | None,
+        period_start: datetime | None,
+        period_end: datetime | None,
+    ) -> ProviderUsageSummaryView:
+        end = period_end or _utcnow()
+        start = period_start or end - timedelta(hours=24)
+        if end <= start or end - start > timedelta(days=31):
+            raise AppError(422, "INVALID_USAGE_PERIOD", "Provider usage period must be positive and no longer than 31 days")
+        statement = select(ProviderUsageEvent).where(
+            ProviderUsageEvent.occurred_at >= start,
+            ProviderUsageEvent.occurred_at < end,
+        )
+        if provider:
+            statement = statement.where(ProviderUsageEvent.provider == provider)
+        if purpose:
+            statement = statement.where(ProviderUsageEvent.purpose == purpose)
+        records = list(self.db.scalars(statement))
+        usage_rows = [item.usage_json or {} for item in records]
+        latencies = [item.latency_ms for item in records if item.latency_ms is not None]
+        return ProviderUsageSummaryView(
+            period_start=start,
+            period_end=end,
+            provider=provider,
+            purpose=purpose,
+            calls=len(records),
+            failures=sum(1 for item in records if item.status == "failed"),
+            estimated_cost_minor=sum(item.estimated_cost_minor or 0 for item in records),
+            input_tokens=sum(int(item.get("input_tokens") or 0) for item in usage_rows),
+            output_tokens=sum(int(item.get("output_tokens") or 0) for item in usage_rows),
+            average_latency_ms=(sum(latencies) / len(latencies)) if latencies else None,
+        )
 
     def _command(self, current: ProductCurrentUser, command_type: str, idempotency_key: str, payload: dict[str, Any]) -> tuple[PrivilegedCommand, bool]:
         request_hash = self._hash(payload)

@@ -88,3 +88,5 @@ from app.models.product_admin_ops import (
     PrivilegedAuditEvent,
     PrivilegedCommand,
 )
+
+from app.models.provider_ops import ProviderUsageEvent

@@ -20,6 +20,13 @@ class FakeRedis:
     def expire(self, key, seconds):
         return True
 
+    def get(self, key):
+        return self.values.get(key)
+
+    def incrby(self, key, amount):
+        self.values[key] = int(self.values.get(key, 0)) + amount
+        return self.values[key]
+
     def delete(self, key):
         self.values.pop(key, None)
         self.hashes.pop(key, None)

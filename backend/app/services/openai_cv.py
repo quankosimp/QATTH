@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import os
 from typing import Any
 
@@ -90,6 +91,7 @@ class OpenAICvAdapter:
             correlation_id=execution.correlation_id,
             attempts=execution.attempts,
             latency_ms=execution.latency_ms,
+            estimated_cost_minor=self._estimate_cost(payload.get("usage", {}), runtime["configuration"]),
         )
         return CvExtractionOutput.model_validate(payload["data"]), payload
 
@@ -149,8 +151,19 @@ class OpenAICvAdapter:
             correlation_id=execution.correlation_id,
             attempts=execution.attempts,
             latency_ms=execution.latency_ms,
+            estimated_cost_minor=self._estimate_cost(payload.get("usage", {}), runtime["configuration"]),
         )
         return CvAnalysisOutput.model_validate(payload["data"]), payload
+
+    @staticmethod
+    def _estimate_cost(usage: dict[str, Any], configuration: dict[str, Any]) -> int | None:
+        input_rate = configuration.get("input_cost_minor_per_million")
+        output_rate = configuration.get("output_cost_minor_per_million")
+        if input_rate is None or output_rate is None:
+            return None
+        input_tokens = int(usage.get("input_tokens") or 0)
+        output_tokens = int(usage.get("output_tokens") or 0)
+        return math.ceil((input_tokens * int(input_rate) + output_tokens * int(output_rate)) / 1_000_000)
 
     def _request(self, name: str, schema: dict[str, Any], content: list[dict[str, Any]], model: str | None = None) -> dict[str, Any]:
         if not self.api_key:

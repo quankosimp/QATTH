@@ -131,3 +131,16 @@ class OpsDiagnosticsView(BaseModel):
     failed_jobs_24h: int
     pending_jobs: int
     pending_dispatches: int
+
+
+class ProviderUsageSummaryView(BaseModel):
+    period_start: datetime
+    period_end: datetime
+    provider: str | None
+    purpose: str | None
+    calls: int
+    failures: int
+    estimated_cost_minor: int
+    input_tokens: int
+    output_tokens: int
+    average_latency_ms: float | None

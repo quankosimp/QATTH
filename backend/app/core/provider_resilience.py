@@ -3,6 +3,7 @@ from __future__ import annotations
 import random
 import threading
 import time
+from datetime import UTC, datetime
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Callable, Generic, TypeVar
@@ -38,8 +39,13 @@ try:
         "Provider circuit breaker transitions to open.",
         ["provider", "purpose"],
     )
+    PROVIDER_COST = Counter(
+        "qatth_provider_estimated_cost_minor_total",
+        "Estimated provider cost in configured minor currency units.",
+        ["provider"],
+    )
 except ImportError:  # pragma: no cover - prometheus is optional outside API runtime
-    PROVIDER_CALLS = PROVIDER_LATENCY = PROVIDER_IN_FLIGHT = PROVIDER_CIRCUIT_OPENED = None
+    PROVIDER_CALLS = PROVIDER_LATENCY = PROVIDER_IN_FLIGHT = PROVIDER_CIRCUIT_OPENED = PROVIDER_COST = None
 
 
 T = TypeVar("T")
@@ -93,10 +99,12 @@ class ProviderExecutor:
         self._local_lock = threading.Lock()
         self._local_in_flight: dict[str, int] = {}
         self._local_circuits: dict[str, tuple[int, float]] = {}
+        self._local_cost: dict[str, int] = {}
 
     def execute(self, provider: str, purpose: str, operation: Callable[[], T]) -> ProviderExecution[T]:
         correlation_id = str(get_contextvars().get("request_id") or uuid4())
         key = provider + ":" + purpose
+        self._ensure_budget(provider)
         self._ensure_circuit_closed(key, provider, purpose)
         lease_backend = self._acquire_bulkhead(key, provider, purpose)
         started = self.monotonic()
@@ -113,6 +121,17 @@ class ProviderExecutor:
                 except Exception as exc:
                     retryable = isinstance(exc, AppError) and exc.retryable
                     if not retryable or attempt >= self.retry_attempts:
+                        if isinstance(exc, AppError):
+                            exc.details = {
+                                **(exc.details or {}),
+                                "provider_execution": {
+                                    "provider": provider,
+                                    "purpose": purpose,
+                                    "correlation_id": correlation_id,
+                                    "attempts": attempt,
+                                    "latency_ms": max(0, int((self.monotonic() - started) * 1000)),
+                                },
+                            }
                         self._record_failure(key, provider, purpose)
                         latency = max(0, int((self.monotonic() - started) * 1000))
                         self._metric(provider, purpose, "failure", latency)
@@ -134,6 +153,45 @@ class ProviderExecutor:
             if PROVIDER_IN_FLIGHT:
                 PROVIDER_IN_FLIGHT.labels(provider, purpose).dec()
             self._release_bulkhead(key, lease_backend)
+
+    def record_cost(self, provider: str, estimated_cost_minor: int | None) -> None:
+        amount = int(estimated_cost_minor or 0)
+        if amount <= 0:
+            return
+        daily_key, monthly_key = self._budget_keys(provider)
+        try:
+            self.redis.incrby(daily_key, amount)
+            self.redis.expire(daily_key, 172800)
+            self.redis.incrby(monthly_key, amount)
+            self.redis.expire(monthly_key, 2678400)
+        except redis.RedisError:
+            with self._local_lock:
+                self._local_cost[daily_key] = self._local_cost.get(daily_key, 0) + amount
+                self._local_cost[monthly_key] = self._local_cost.get(monthly_key, 0) + amount
+        if PROVIDER_COST:
+            PROVIDER_COST.labels(provider).inc(amount)
+
+    def _ensure_budget(self, provider: str) -> None:
+        if provider != "openai":
+            return
+        settings = get_settings()
+        daily_key, monthly_key = self._budget_keys(provider)
+        try:
+            daily = int(self.redis.get(daily_key) or 0)
+            monthly = int(self.redis.get(monthly_key) or 0)
+        except redis.RedisError:
+            with self._local_lock:
+                daily = self._local_cost.get(daily_key, 0)
+                monthly = self._local_cost.get(monthly_key, 0)
+        if daily >= settings.openai_daily_budget_minor or monthly >= settings.openai_monthly_budget_minor:
+            raise AppError(
+                429,
+                "PROVIDER_BUDGET_EXHAUSTED",
+                "Provider cost budget has been reached",
+                details={"provider": provider, "window": "daily" if daily >= settings.openai_daily_budget_minor else "monthly"},
+            )
+        if daily >= int(settings.openai_daily_budget_minor * 0.8):
+            logger.warning("provider_daily_budget_near_limit", provider=provider, spent_minor=daily)
 
     def _ensure_circuit_closed(self, key: str, provider: str, purpose: str) -> None:
         redis_key = self._circuit_key(key)
@@ -231,6 +289,13 @@ class ProviderExecutor:
 
     def _bulkhead_key(self, key: str) -> str:
         return f"{self.prefix}:provider:bulkhead:{key}"
+
+    def _budget_keys(self, provider: str) -> tuple[str, str]:
+        now = datetime.now(UTC)
+        return (
+            f"{self.prefix}:provider:cost:{provider}:day:{now:%Y%m%d}",
+            f"{self.prefix}:provider:cost:{provider}:month:{now:%Y%m}",
+        )
 
 
 @lru_cache
