@@ -302,7 +302,7 @@ Normative business rules và catalog baseline nằm trong [Pricing and Credits S
 | created_at, published_at | timestamptz | Audit timestamps |
 | metadata | jsonb | Tax/legal/catalog notes |
 
-Unique <code>(market, currency, version_key)</code>. Exclusion/transactional activation bảo đảm không có hai active ranges chồng nhau cho cùng market/currency. Published version không update; thay đổi tạo version mới.
+Unique version key. Transactional predecessor/successor scheduling giữ effective ranges không chồng nhau; unique partial <code>(market, currency)</code> cho published row có <code>effective_to IS NULL</code> bảo đảm chỉ một open-ended tail kể cả khi activate đồng thời. Published version không update pricing; thay đổi tạo version mới.
 
 ### billing_offers và billing_offer_prices
 

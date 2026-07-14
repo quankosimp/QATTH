@@ -809,11 +809,19 @@ class ProductBillingService:
             raise AppError(404, "BILLING_CATALOG_NOT_FOUND", "Billing catalog was not found")
         if catalog.status != "draft":
             raise AppError(409, "BILLING_CATALOG_IMMUTABLE", "Only a draft catalog can be activated")
-        active = list(self.db.scalars(select(BillingCatalogVersion).where(BillingCatalogVersion.market == catalog.market, BillingCatalogVersion.currency == catalog.currency, BillingCatalogVersion.status == "active").with_for_update()))
-        for item in active:
-            item.effective_to = payload.effective_from
-            if payload.effective_from <= _utcnow():
-                item.status = "retired"
+        active = list(
+            self.db.scalars(
+                select(BillingCatalogVersion)
+                .where(
+                    BillingCatalogVersion.market == catalog.market,
+                    BillingCatalogVersion.currency == catalog.currency,
+                    BillingCatalogVersion.status == "active",
+                )
+                .order_by(BillingCatalogVersion.effective_from, BillingCatalogVersion.id)
+                .with_for_update()
+            )
+        )
+        self._schedule_catalog_activation(catalog, active, payload.effective_from)
         catalog.status = "active"
         catalog.effective_from = payload.effective_from
         catalog.published_at = _utcnow()
@@ -823,6 +831,28 @@ class ProductBillingService:
         self.db.commit()
         self.db.refresh(catalog)
         return catalog
+
+    @staticmethod
+    def _schedule_catalog_activation(
+        catalog: BillingCatalogVersion,
+        published: list[BillingCatalogVersion],
+        effective_from: datetime,
+    ) -> None:
+        if any(item.effective_from == effective_from for item in published):
+            raise AppError(409, "BILLING_CATALOG_EFFECTIVE_TIME_CONFLICT", "Another catalog is already effective at this time")
+        predecessor = max(
+            (item for item in published if item.effective_from is not None and item.effective_from < effective_from),
+            key=lambda item: item.effective_from,
+            default=None,
+        )
+        successor = min(
+            (item for item in published if item.effective_from is not None and item.effective_from > effective_from),
+            key=lambda item: item.effective_from,
+            default=None,
+        )
+        if predecessor is not None and (predecessor.effective_to is None or predecessor.effective_to > effective_from):
+            predecessor.effective_to = effective_from
+        catalog.effective_to = successor.effective_from if successor is not None else None
 
     def update_feature_price(self, current: ProductCurrentUser, catalog_id: str, feature_key: str, payload: UpdateFeatureCreditPriceRequest, idempotency_key: str) -> FeatureCreditPrice:
         command, replay = self._command(current.id, "set_feature_price:" + catalog_id + ":" + feature_key, idempotency_key, payload.model_dump(mode="json"))

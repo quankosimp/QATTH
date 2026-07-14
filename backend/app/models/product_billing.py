@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, text
 
 from app.models.db import Base
 
@@ -21,6 +21,14 @@ class BillingCatalogVersion(Base):
     __table_args__ = (
         UniqueConstraint("version_key", name="uq_product_billing_catalog_version_key"),
         Index("ix_product_billing_catalog_active", "market", "currency", "status", "effective_from"),
+        Index(
+            "uq_product_billing_catalog_open_tail",
+            "market",
+            "currency",
+            unique=True,
+            postgresql_where=text("status = 'active' AND effective_to IS NULL"),
+            sqlite_where=text("status = 'active' AND effective_to IS NULL"),
+        ),
     )
 
     id = Column(String(36), primary_key=True, default=_uuid)
