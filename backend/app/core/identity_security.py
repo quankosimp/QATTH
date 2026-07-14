@@ -246,7 +246,7 @@ def _resolve_local_token(db: Session, token: str) -> ProductCurrentUser:
     digest = hashlib.sha256(token.encode()).hexdigest()
     auth_token = db.scalar(select(AuthToken).where(AuthToken.token_hash == digest))
     now = _utcnow()
-    if auth_token is None or auth_token.revoked or auth_token.expires_at < now:
+    if auth_token is None or auth_token.revoked_at is not None or auth_token.expires_at < now:
         raise AppError(401, "UNAUTHORIZED", "Invalid or expired bearer token")
     user = db.get(User, auth_token.user_id)
     if user is None or not user.is_active:
