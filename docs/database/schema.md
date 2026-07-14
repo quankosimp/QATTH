@@ -270,17 +270,144 @@ Versioned derived profile: <code>id</code>, user ID, version, CV version ID, pre
 
 ## 10. Billing domain
 
-### plans và plan_prices
+Normative business rules và catalog baseline nằm trong [Pricing and Credits Specification](../billing/pricing-and-credits.md). Database không hard-code giá vào domain logic; seed catalog chỉ là data migration.
 
-Plan giữ product entitlement/credit policy version. Price giữ provider price ID, currency, amount minor, interval, effective range. Không overwrite price lịch sử đã dùng.
+### pricing_catalog_versions
+
+| Column | Type | Constraint / meaning |
+|---|---|---|
+| id | uuid | PK |
+| version_key | text | Human-readable immutable version |
+| market | text | Ví dụ VN |
+| currency | char(3) | VND cho baseline |
+| status | text | draft, active, retired |
+| effective_from, effective_to | timestamptz | Non-overlapping active range |
+| created_by_user_id | uuid | Nullable FK users |
+| published_by_user_id | uuid | Nullable FK users |
+| created_at, published_at | timestamptz | Audit timestamps |
+| metadata | jsonb | Tax/legal/catalog notes |
+
+Unique <code>(market, currency, version_key)</code>. Exclusion/transactional activation bảo đảm không có hai active ranges chồng nhau cho cùng market/currency. Published version không update; thay đổi tạo version mới.
+
+### billing_offers và billing_offer_prices
+
+Offer:
+
+- <code>id</code>, catalog version ID, internal code, display name.
+- <code>offer_type</code>: subscription hoặc topup.
+- <code>billing_interval</code>: month cho subscription, null cho top-up.
+- <code>credit_grant</code> positive integer.
+- status active/inactive, sort order và safe metadata.
+- Unique <code>(catalog_version_id, code)</code>.
+
+Price:
+
+- <code>id</code>, offer ID, currency, <code>amount_minor</code>, tax behavior và effective range.
+- VND dùng integer amount theo ISO 4217, không float.
+- Unique active price theo offer/currency/effective range.
+
+Baseline seed version <code>2026-07-14-product-v1-draft</code>:
+
+| Offer | Type | Amount minor | Credit grant |
+|---|---|---:|---:|
+| STARTER_MONTHLY | subscription | 49000 | 60 |
+| PRO_MONTHLY | subscription | 99000 | 150 |
+| PREMIUM_MONTHLY | subscription | 199000 | 350 |
+| TOPUP_STARTER | topup | 70000 | 70 |
+| TOPUP_PRO | topup | 100000 | 105 |
+| TOPUP_PREMIUM | topup | 200000 | 220 |
+| TOPUP_MAX | topup | 300000 | 335 |
+
+### feature_credit_prices
+
+<code>id</code>, catalog version ID, feature key, non-negative credit cost, optional duration/quota policy JSONB, created/published audit fields. Unique <code>(catalog_version_id, feature_key)</code>.
+
+Baseline:
+
+- <code>cv_upload=0</code>.
+- <code>cv_analysis=10</code>.
+- <code>search_run=0</code>.
+- <code>interview_session=25</code> với maximum duration 30 phút.
+
+Zero cost là hợp lệ và vẫn yêu cầu usage telemetry/quota.
+
+### signup_trial_policies
+
+Versioned policy: <code>id</code>, policy key, status, enabled, trigger, credit amount, valid days, grants-per-user, effective range, actor/timestamps.
+
+Baseline policy: trigger verified email, 50 credits, 7 days, một grant/user. Published policy không update tại chỗ.
+
+### payment_provider_mappings
+
+<code>id</code>, provider, offer/price ID, provider product/price identifier, status, effective range, metadata và timestamps. Unique provider/provider price ID. Mapping không làm provider ID trở thành canonical offer ID.
+
+### checkout_sessions
+
+<code>id</code>, user ID, offer/price/catalog IDs, provider, provider session/order ID, status, amount/currency/credit snapshot, idempotency key, redirect URL fingerprints, expires/completed timestamps.
+
+Unique <code>(user_id, idempotency_key)</code> và provider session/order ID. Client không cung cấp authoritative amount/credit.
 
 ### subscriptions
 
-<code>id</code>, user ID, provider/customer/subscription IDs, plan/price IDs, status, current period, cancel flags, provider version/last event time, timestamps. Unique provider subscription ID.
+<code>id</code>, user ID, internal offer/price/catalog IDs, provider/customer/subscription IDs, status, current period start/end, cancel flags, last provider event time, timestamps.
+
+Unique provider subscription ID. Period credit grant tham chiếu subscription + period; cancel giữ period hiện tại, failed payment không tạo grant.
+
+### payment_events và webhook_inbox
+
+Webhook inbox:
+
+- <code>id</code>, provider, provider event ID, event type, signature verified timestamp, received timestamp, status/attempts/error.
+- Raw payload JSONB nếu an toàn hoặc encrypted object reference theo retention.
+- Unique <code>(provider, provider_event_id)</code>.
+
+Normalized payment event:
+
+- <code>id</code>, inbox ID, event type, order/subscription references, amount/currency, occurred_at, normalized payload và processed timestamp.
+- Unique inbox ID/event semantic key.
+- Processing transaction cập nhật payment projection và credit grant idempotently.
 
 ### credit_accounts
 
-Một account theo user/currency credit: <code>id</code>, user ID, status, optional cached balance với reconciliation, lock/version, timestamps. Unique user.
+Một account theo user:
+
+| Column | Type | Constraint / meaning |
+|---|---|---|
+| id | uuid | PK |
+| user_id | uuid | FK users, unique |
+| status | text | active, review, locked, closed |
+| posted_balance | bigint | Optional transactionally maintained projection |
+| reserved_balance | bigint | Optional projection, non-negative |
+| version | bigint | Optimistic/accounting lock version |
+| created_at, updated_at | timestamptz | Required |
+
+Authoritative posted balance phải khớp ledger; available còn trừ active reservations và expired buckets. Projection được reconciliation kiểm tra.
+
+### credit_grants và credit_buckets
+
+Grant giữ nguồn business bất biến:
+
+- <code>id</code>, account/user, source type trial/subscription/topup/adjustment.
+- Source reference, offer/catalog/subscription/period/payment IDs.
+- Granted amount, idempotency key, granted_at, metadata.
+- Unique source business reference và account/idempotency key.
+
+Bucket giữ allocation/expiry:
+
+| Column | Type | Constraint / meaning |
+|---|---|---|
+| id | uuid | PK |
+| grant_id | uuid | FK credit_grants |
+| account_id | uuid | FK credit_accounts |
+| bucket_type | text | trial, subscription, topup, adjustment |
+| granted_amount | bigint | Positive |
+| consumed_amount | bigint | Non-negative |
+| expired_amount | bigint | Non-negative |
+| expires_at | timestamptz | Null cho non-expiring top-up |
+| expiry_settled_at | timestamptz | Nullable |
+| created_at | timestamptz | Required |
+
+Constraint <code>granted_amount >= consumed_amount + expired_amount</code>. Available bucket còn trừ active reservation allocations. Index account/type/expires_at và pending expiry.
 
 ### credit_ledger_entries
 
@@ -289,25 +416,47 @@ Append-only:
 | Column | Type | Constraint / meaning |
 |---|---|---|
 | id | uuid | PK |
-| account_id | uuid | FK |
-| amount | bigint | signed, non-zero |
-| entry_type | text | grant, charge, refund, adjustment, expiry |
-| reference_type, reference_id | text/uuid | business provenance |
-| idempotency_key | text | unique scoped account |
-| occurred_at | timestamptz | required |
-| metadata | jsonb | safe reason/provider info |
-| created_by | uuid/text | user/admin/service |
+| account_id, bucket_id | uuid | Required account, nullable bucket khi adjustment đặc biệt |
+| entry_type | text | GRANT, CHARGE, EXPIRE, REFUND, REVERSAL, ADJUSTMENT |
+| amount | bigint | Signed, non-zero |
+| balance_after | bigint | Posted account projection sau entry |
+| reference_type, reference_id | text/uuid | Business provenance |
+| idempotency_key | text | Unique scoped account |
+| actor_type, actor_id | text/uuid | User/admin/service/provider |
+| occurred_at | timestamptz | Required |
+| metadata | jsonb | Safe reason/provider info |
 
-Balance authoritative bằng tổng posted entries; cached balance nếu có phải cập nhật cùng transaction và reconcile.
+Không update/delete posted row. <code>RELEASE</code> là reservation state/audit event và không cần ledger amount zero.
 
 ### usage_reservations
 
-<code>id</code>, account ID, user/action/resource, amount, status reserved/settled/released/expired, idempotency key, expires_at, ledger entry IDs, timestamps. Transaction reserve khóa account hoặc dùng serializable/atomic constraint để tránh overspend.
+<code>id</code>, account/user, feature key, business resource, credit cost, pricing/catalog version, status reserved/settled/released/expired, idempotency key, request hash, billable started timestamp, expires_at, timestamps.
 
-### webhook_inbox
+Unique account/operation/idempotency key và business resource/feature active reservation. Same key khác request hash trả conflict.
 
-<code>id</code>, provider, provider event ID, event type, signature verified timestamp, received_at, status, attempts, payload JSONB hoặc encrypted object reference, error code, processed_at. Unique <code>(provider, provider_event_id)</code>.
+### reservation_allocations
 
+<code>id</code>, reservation ID, bucket ID, allocated amount, status reserved/settled/released, settled ledger entry ID nullable, timestamps.
+
+Unique reservation/bucket. Allocation theo trial earliest expiry, subscription earliest expiry, top-up oldest. Tổng allocations bằng reservation credit cost. Settle/release idempotent.
+
+### account_reviews
+
+<code>id</code>, account/user, reason refund/chargeback/reconciliation, related payment/event, debt credit amount, status open/resolved/waived, actor/reason/timestamps.
+
+Refund reverse phần grant chưa dùng. Nếu grant đã dùng, account chuyển review/locked theo policy thay vì âm thầm tạo balance âm.
+
+### Billing indexes and invariants
+
+- Unique grant theo subscription + billing period.
+- Unique trial grant theo user + policy purpose.
+- Unique webhook theo provider/event ID.
+- Unique ledger mutation theo account/idempotency key.
+- Row lock/serializable strategy cho reserve/settle/release.
+- Expiry settlement và reservation reconciliation có index theo status/time.
+- Payment, ledger và audit retention độc lập application logs.
+- Redis/cache không quyết định accounting correctness.
+- Credit không transfer giữa users hoặc cash out.
 ## 11. AI, background work và integration
 
 ### prompt_versions

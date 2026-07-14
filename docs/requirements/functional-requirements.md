@@ -91,6 +91,12 @@ Tài liệu này mô tả hành vi mục tiêu của QATTH Product v1. Đây là
 | FR-BILL-005 | Tác vụ tốn credit phải reserve trước và settle/refund sau. | Must | Concurrent request không overspend; timeout có reconciliation; provider failure không mất credit sai. |
 | FR-BILL-006 | User phải xem lịch sử credit và usage dễ hiểu. | Must | Mỗi entry có action, amount, occurred_at và reference; dữ liệu nội bộ nhạy cảm không lộ. |
 
+| FR-BILL-007 | Hệ thống phải hỗ trợ catalog versioned gồm monthly subscription và one-time top-up offers. | Must | Catalog active trả đúng offer, VND amount, interval và credit grant; checkout lưu snapshot/version; version đã publish không bị sửa. |
+| FR-BILL-008 | Successful subscription payment phải cấp credit đúng một lần cho từng billing period và credit hết hạn cuối kỳ. | Must | Duplicate webhook không cấp lại; cancel giữ quyền đến hết kỳ; payment failed không grant; không rollover. |
+| FR-BILL-009 | Verified user phải nhận signup trial một lần theo policy active. | Must | Email verification cấp 50 credits có hạn 7 ngày; retry/login/link identity không cấp lần hai; expiry không giảm paid credits. |
+| FR-BILL-010 | Credit phải được giữ trong bucket theo nguồn và consume theo thứ tự trial, subscription, top-up. | Must | Earliest expiry được dùng trước; concurrent reservation không overspend; release trả về đúng bucket/expiry; balance API trả breakdown. |
+| FR-BILL-011 | Payment refund/chargeback và feature refund phải có ledger/review workflow. | Must | Unspent grant được reversal idempotent; credit đã dùng chuyển account review/debt; không sửa ledger cũ hoặc tạo balance âm âm thầm. |
+
 ## 9. Privacy, administration và operations
 
 | ID | Requirement | Priority | Acceptance criteria |
