@@ -90,3 +90,4 @@ from app.models.product_admin_ops import (
 )
 
 from app.models.provider_ops import ProviderUsageEvent
+# ruff: noqa: F401
