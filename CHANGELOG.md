@@ -38,6 +38,7 @@ Tất cả thay đổi đáng chú ý của QATTH được ghi lại trong file 
 - Docker Compose now initializes the S3-compatible bucket, uses the runtime R2 variable contract, runs a dedicated Celery beat process and gates API health on readiness; shutdown and schema-head contracts are tested.
 - Structured logs now include service, environment, severity and bound request/task context; infrastructure failures emit fixed safe error codes without exception payload text.
 - CV confirmation and interview mutation paths now serialize on their aggregate rows; realtime token locking has one consistent order, event dedup runs inside the timeline lock, and confirmed CV/interview history rejects database updates.
+- Job-application status history and attributed recommendation feedback now reject database updates while retaining audited privacy-deletion compatibility.
 - Interview credits are reserved at realtime token issuance and captured only after the first successful Gemini output delivery; timeout reconciliation now follows CV/interview outcomes.
 - Client checkout redirect URLs are retained only by QATTH and are no longer copied into provider metadata.
 - Payment reversal dùng provider transaction reference, hỗ trợ partial reversal và chỉ đưa account vào review khi phát sinh debt.

@@ -28,7 +28,7 @@ Không lưu PDF trong PostgreSQL trừ artifact rất nhỏ có lý do được 
 | <code>0020</code>-<code>0023</code> | Payment inbox/reconciliation, billable interview boundary, recommendation feedback và auditable ranking v2 |
 | <code>0024</code>-<code>0028</code> | OIDC provider-session identity, catalog schedule invariants, cumulative payment reversal/account review, durable AI dispatch và worker processing leases |
 | <code>0029</code>-<code>0030</code> | Persisted async-run correlation và transactional outbox cho admin background-job retry |
-| <code>0031</code>-<code>0032</code> | DB-enforced immutability cho privacy audit events, confirmed CV versions và interview timeline |
+| <code>0031</code>-<code>0033</code> | DB-enforced immutability cho privacy audit events, confirmed CV versions, interview timeline, application history và recommendation feedback |
 
 Migration trong <code>migrations/versions/</code> là lịch sử physical schema bất biến. Bảng/constraint trong tài liệu chưa có revision tương ứng phải được coi là gap và cần migration riêng; không dùng <code>create_all</code> để thay thế migration ở production.
 
@@ -42,7 +42,7 @@ Migration trong <code>migrations/versions/</code> là lịch sử physical schem
 - Tiền lưu integer minor unit + ISO 4217 currency; credit lưu integer.
 - URL/object key không chứa email/tên người dùng.
 - Mọi unique key nhận từ provider phải scope theo provider/source.
-- Bảng event/ledger/outbox là append-only ở application permission; confirmed CV versions và interview events còn bị chặn <code>UPDATE</code> tại database.
+- Bảng event/ledger/outbox là append-only ở application permission; confirmed CV versions, interview/application events và recommendation feedback còn bị chặn <code>UPDATE</code> tại database.
 - Domain-history guard vẫn cho phép <code>DELETE</code> qua privacy workflow đã audit; không dùng guard để cản data-subject erasure.
 - Table name dùng snake_case plural.
 
