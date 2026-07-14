@@ -104,7 +104,11 @@ class DistributedRateLimitMiddleware(BaseHTTPMiddleware):
             current = int(current)
             ttl = max(int(ttl), 1)
         except redis.RedisError as exc:
-            logger.warning("rate_limit_redis_unavailable", error_type=type(exc).__name__)
+            logger.warning(
+                "rate_limit_redis_unavailable",
+                error_code="RATE_LIMIT_BACKEND_UNAVAILABLE",
+                error_type=type(exc).__name__,
+            )
             if not self.fail_closed:
                 return await call_next(request)
             return self._error_response(

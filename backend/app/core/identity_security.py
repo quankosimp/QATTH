@@ -3,7 +3,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-import logging
 import re
 import threading
 import time
@@ -13,6 +12,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 import httpx
+import structlog
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.hazmat.primitives.hashes import SHA256
 from fastapi import Depends, Request
@@ -26,7 +26,7 @@ from app.core.errors import AppError
 from app.models.db import AuthToken, User
 from app.models.identity import AuthIdentity, UserProductProfile, UserSession
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 bearer = HTTPBearer(auto_error=False)
 
 
@@ -133,7 +133,12 @@ class OidcVerifier:
                 response.raise_for_status()
                 payload = response.json()
             except (httpx.HTTPError, ValueError) as exc:
-                logger.warning("oidc_jwks_fetch_failed", extra={"issuer": self.issuer})
+                logger.warning(
+                    "oidc_jwks_fetch_failed",
+                    issuer=self.issuer,
+                    error_code="AUTH_PROVIDER_UNAVAILABLE",
+                    error_type=type(exc).__name__,
+                )
                 raise AppError(503, "AUTH_PROVIDER_UNAVAILABLE", "Identity provider is unavailable", retryable=True) from exc
             if not isinstance(payload.get("keys"), list):
                 raise AppError(503, "AUTH_PROVIDER_INVALID", "Identity provider returned invalid keys", retryable=True)

@@ -83,6 +83,7 @@ def test_unhandled_error_log_does_not_serialize_exception_text(monkeypatch) -> N
                 "request_id": "request-1",
                 "method": "POST",
                 "path": "/v1/cv-scans",
+                "error_code": "INTERNAL_ERROR",
                 "error_type": "RuntimeError",
             },
         )

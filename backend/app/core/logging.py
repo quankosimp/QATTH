@@ -9,6 +9,14 @@ from app.core.config import get_settings
 def configure_logging() -> None:
     settings = get_settings()
     level = getattr(logging, settings.log_level.upper(), logging.INFO)
+
+    def add_runtime_context(_, __, event_dict):
+        event_dict.setdefault("service", settings.app_name)
+        event_dict.setdefault("environment", settings.app_env)
+        if "level" in event_dict:
+            event_dict.setdefault("severity", str(event_dict["level"]).upper())
+        return event_dict
+
     logging.basicConfig(
         format="%(message)s",
         stream=sys.stdout,
@@ -19,6 +27,7 @@ def configure_logging() -> None:
         processors=[
             structlog.contextvars.merge_contextvars,
             structlog.processors.add_log_level,
+            add_runtime_context,
             structlog.processors.TimeStamper(fmt="iso", utc=True),
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,

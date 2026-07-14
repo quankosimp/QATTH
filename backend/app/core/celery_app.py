@@ -72,7 +72,7 @@ def register_operational_job(sender=None, body=None, headers=None, routing_key=N
             db.add(OperationalJob(id=task_id, task_name=str(sender or headers.get("task") or "unknown"), queue=str(routing_key or "celery"), status="queued", attempt=(parent.attempt + 1) if parent else 0, max_attempts=parent.max_attempts if parent else 3, resource_type=str(sender or headers.get("task") or "task"), resource_id=args[0] if args else None, args_payload=args, request_id=request_id, parent_job_id=parent.id if parent else None))
             db.commit()
     except Exception as exc:
-        logger.error("operational_job_publish_tracking_failed", task_id=task_id, error_type=type(exc).__name__)
+        logger.error("operational_job_publish_tracking_failed", task_id=task_id, error_code="OPERATIONAL_JOB_TRACKING_FAILED", error_type=type(exc).__name__)
 
 
 @signals.task_prerun.connect
@@ -100,7 +100,7 @@ def mark_operational_job_running(task_id=None, task=None, args=None, **kwargs):
             job.started_at = job.started_at or datetime.now(UTC)
             db.commit()
     except Exception as exc:
-        logger.error("operational_job_start_tracking_failed", task_id=str(task_id), error_type=type(exc).__name__)
+        logger.error("operational_job_start_tracking_failed", task_id=str(task_id), error_code="OPERATIONAL_JOB_TRACKING_FAILED", error_type=type(exc).__name__)
 
 
 @signals.task_postrun.connect
@@ -122,7 +122,7 @@ def mark_operational_job_finished(task_id=None, retval=None, state=None, **kwarg
                 job.result_summary = {key: value for key, value in retval.items() if key in {"status", "run_id", "request_id", "analysis_id", "report_id"}}
             db.commit()
     except Exception as exc:
-        logger.error("operational_job_finish_tracking_failed", task_id=str(task_id), error_type=type(exc).__name__)
+        logger.error("operational_job_finish_tracking_failed", task_id=str(task_id), error_code="OPERATIONAL_JOB_TRACKING_FAILED", error_type=type(exc).__name__)
     finally:
         clear_contextvars()
 
@@ -143,4 +143,4 @@ def mark_operational_job_failed(task_id=None, exception=None, **kwargs):
             job.finished_at = datetime.now(UTC)
             db.commit()
     except Exception as exc:
-        logger.error("operational_job_failure_tracking_failed", task_id=str(task_id), error_type=type(exc).__name__)
+        logger.error("operational_job_failure_tracking_failed", task_id=str(task_id), error_code="OPERATIONAL_JOB_TRACKING_FAILED", error_type=type(exc).__name__)

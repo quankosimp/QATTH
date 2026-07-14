@@ -108,6 +108,7 @@ async def unhandled_error_handler(request: Request, exc: Exception) -> JSONRespo
         request_id=_request_id(request),
         method=request.method,
         path=request.url.path,
+        error_code="INTERNAL_ERROR",
         error_type=type(exc).__name__,
     )
     return _error_response(

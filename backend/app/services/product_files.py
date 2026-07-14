@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import hashlib
-import logging
 import socket
 import struct
 from datetime import datetime, timedelta, timezone
 from pathlib import PurePath
 from uuid import uuid4
 
+import structlog
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -21,7 +21,7 @@ from app.services.object_storage import ObjectStorage
 from app.services.identity import IdentityService
 
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 def _utcnow() -> datetime:
@@ -168,8 +168,13 @@ class ProductFileService:
         self.db.refresh(asset)
         try:
             self.storage.delete(staging_key)
-        except Exception:
-            logger.warning("staging_file_cleanup_failed", extra={"file_id": asset.id})
+        except Exception as exc:
+            logger.warning(
+                "staging_file_cleanup_failed",
+                file_id=asset.id,
+                error_code="STAGING_FILE_CLEANUP_FAILED",
+                error_type=type(exc).__name__,
+            )
         return asset
 
     def download_url(self, current: ProductCurrentUser, file_id: str, expires_seconds: int = 300) -> tuple[str, datetime]:
