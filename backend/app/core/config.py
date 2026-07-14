@@ -84,6 +84,10 @@ class Settings(BaseSettings):
     payment_api_key: str | None = None
     payment_webhook_secret: str | None = None
     payment_success_url_allowlist: list[str] = Field(default_factory=list)
+    payment_paddle_api_base_url: str = "https://api.paddle.com"
+    payment_paddle_price_ids: dict[str, str] = Field(default_factory=dict)
+    payment_webhook_tolerance_seconds: int = 5
+    payment_http_timeout_seconds: float = 10.0
     credit_adjustment_dual_control_enabled: bool = True
     credit_adjustment_dual_control_threshold: int = 500
 

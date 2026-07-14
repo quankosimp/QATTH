@@ -286,6 +286,8 @@ Core billing chỉ dùng internal concepts:
 
 SePay, Paddle, Stripe hoặc provider khác chỉ tồn tại trong adapter mapping và metadata. Public API không trả provider-specific plan code làm canonical ID.
 
+Paddle là production adapter đầu tiên theo [ADR 0006](../adr/0006-use-paddle-as-first-payment-adapter.md). Paddle price IDs được map từ internal offer code bằng cấu hình adapter, không được trả qua catalog API. Webhook production dùng header <code>Paddle-Signature</code>; <code>X-Payment-Signature</code> chỉ thuộc mock adapter local/test.
+
 ## 11. API contract summary
 
 | Operation | Purpose |

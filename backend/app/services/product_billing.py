@@ -51,7 +51,7 @@ from app.schemas.product_billing import (
     UpdateFeatureCreditPriceRequest,
     UpdateSignupTrialPolicyRequest,
 )
-from app.services.payment_adapter import payment_adapter
+from app.services.payment_adapter import payment_adapter, redact_payment_payload
 
 
 def _utcnow() -> datetime:
@@ -418,7 +418,9 @@ class ProductBillingService:
             raise AppError(503, "PAYMENT_REDIRECT_NOT_CONFIGURED", "Payment redirect allowlist is not configured")
         return_url = str(configured_urls[0])
         self._validate_redirect(return_url)
-        redirect = payment_adapter(subscription.provider).create_portal(current.id, return_url)
+        if not subscription.provider_customer_id:
+            raise AppError(409, "PAYMENT_CUSTOMER_NOT_FOUND", "Subscription has no provider customer")
+        redirect = payment_adapter(subscription.provider).create_portal(subscription.provider_customer_id, return_url)
         response = RedirectSessionView(id=redirect.provider_session_id, offer_id=subscription.offer_id, url=redirect.url, expires_at=redirect.expires_at)
         self._complete_command(command, "portal_session", None, response.model_dump(mode="json"))
         self.db.commit()
@@ -443,7 +445,7 @@ class ProductBillingService:
                 provider_event_id=event.event_id,
                 event_type=event.event_type,
                 raw_body_hash=body_hash,
-                raw_payload=payload,
+                raw_payload=redact_payment_payload(payload),
                 normalized_payload=event.payload,
                 raw_payload_expires_at=_utcnow() + timedelta(days=90),
             )
@@ -455,11 +457,11 @@ class ProductBillingService:
             if event.event_type in {"checkout.completed", "subscription.renewed"}:
                 self._payment_succeeded(provider, event.payload, event.event_id, event.event_type)
             elif event.event_type in {"payment.refunded", "payment.chargeback"}:
-                self._payment_reversed(event.payload, event.event_id, event.event_type)
+                self._payment_reversed(provider, event.payload, event.event_id, event.event_type)
             elif event.event_type == "subscription.cancelled":
                 subscription = self.db.scalar(select(BillingSubscription).where(BillingSubscription.provider == provider, BillingSubscription.provider_subscription_id == str(event.payload.get("subscription_id"))))
                 if subscription:
-                    subscription.cancel_at_period_end = True
+                    subscription.cancel_at_period_end = False
                     subscription.status = "cancelled"
             inbox.status = "processed"
             inbox.processed_at = _utcnow()
@@ -521,6 +523,8 @@ class ProductBillingService:
                 subscription = BillingSubscription(user_id=user_id, offer_id=offer.id, provider=provider, provider_subscription_id=subscription_id, status="active")
                 self.db.add(subscription)
             subscription.status = "active"
+            if payload.get("provider_customer_id"):
+                subscription.provider_customer_id = str(payload["provider_customer_id"])
             subscription.current_period_reference = period_reference
             subscription.current_period_start = period_start
             subscription.current_period_end = period_end
@@ -529,21 +533,34 @@ class ProductBillingService:
             checkout.status = "completed"
             checkout.completed_at = _utcnow()
 
-    def _payment_reversed(self, payload: dict[str, Any], event_id: str, event_type: str) -> None:
+    def _payment_reversed(self, provider: str, payload: dict[str, Any], event_id: str, event_type: str) -> None:
         source_reference = "payment:" + str(payload.get("period_reference") or payload.get("original_event_id") or "")
         bucket = self.db.scalar(select(CreditBucket).where(CreditBucket.source_reference == source_reference).with_for_update())
         if bucket is None:
             raise AppError(422, "PAYMENT_GRANT_NOT_FOUND", "Reversed payment grant was not found")
+        original_event = self.db.scalar(
+            select(PaymentEventInbox).where(
+                PaymentEventInbox.provider == provider,
+                PaymentEventInbox.event_type.in_({"checkout.completed", "subscription.renewed"}),
+                PaymentEventInbox.normalized_payload["period_reference"].as_string()
+                == str(payload.get("period_reference") or ""),
+            )
+        )
+        original_amount = int((original_event.normalized_payload if original_event else {}).get("amount_minor") or 0)
+        reversed_amount = int(payload.get("amount_minor") or original_amount)
+        if original_amount <= 0 or reversed_amount <= 0 or reversed_amount > original_amount:
+            raise AppError(422, "PAYMENT_REVERSAL_AMOUNT_INVALID", "Payment reversal amount is invalid")
+        credits_to_reverse = min(bucket.granted, (bucket.granted * reversed_amount + original_amount - 1) // original_amount)
         account = self.db.scalar(select(CreditAccount).where(CreditAccount.id == bucket.account_id).with_for_update())
         reservation_ids = set(self.db.scalars(select(CreditReservation.id).join(CreditReservationAllocation, CreditReservationAllocation.reservation_id == CreditReservation.id).where(CreditReservationAllocation.bucket_id == bucket.id, CreditReservation.status == "reserved")))
         for reservation_id in reservation_ids:
             self.release(reservation_id, "payment_reversed")
         self.db.flush()
-        unspent = bucket.available
-        bucket.available = 0
-        amount_due = max(0, bucket.granted - unspent)
-        account.status = "review"
+        unspent = min(bucket.available, credits_to_reverse)
+        bucket.available -= unspent
+        amount_due = max(0, credits_to_reverse - unspent)
         if amount_due:
+            account.status = "review"
             account.debt += amount_due
         self.db.flush()
         if unspent:

@@ -7,6 +7,7 @@ Tất cả thay đổi đáng chú ý của QATTH được ghi lại trong file 
 ## [Unreleased]
 
 ### Added
+- Paddle production billing adapter với checkout, customer portal, replay-safe webhook normalization và server-side offer mapping.
 - Live job discovery hardening với full OpenAI source provenance, local schema validation, domain policy và active-page verification.
 - Gemini Live realtime hardening với distributed session lease, reconnect/resumption, context compression, duration/idle limits và usage lineage.
 - Backend Product v1 cho identity/profile/consent, file/CV lifecycle, interview, job discovery, recommendation, billing, privacy, administration và operations.
@@ -22,6 +23,7 @@ Tất cả thay đổi đáng chú ý của QATTH được ghi lại trong file 
 
 ### Changed
 
+- Payment reversal dùng provider transaction reference, hỗ trợ partial reversal và chỉ đưa account vào review khi phát sinh debt.
 - Định vị repository từ backend demo sang backend Product v1 của nền tảng hỗ trợ nghề nghiệp cho sinh viên IT.
 - Chuẩn hóa ranh giới sử dụng OpenAI và Gemini Live.
 - Chuẩn hóa luồng CV thành draft để người dùng chỉnh sửa và xác nhận trước khi lưu bản chính thức.

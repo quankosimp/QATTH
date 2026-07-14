@@ -70,13 +70,19 @@ def create_portal_session(request: Request, idempotency_key: str = Header(..., a
 
 
 @router.post("/webhooks/payments/{provider}", status_code=status.HTTP_202_ACCEPTED)
-async def receive_payment_webhook(provider: str, request: Request, signature: str | None = Header(default=None, alias="X-Payment-Signature"), db: Session = Depends(get_db)):
+async def receive_payment_webhook(
+    provider: str,
+    request: Request,
+    signature: str | None = Header(default=None, alias="X-Payment-Signature"),
+    paddle_signature: str | None = Header(default=None, alias="Paddle-Signature"),
+    db: Session = Depends(get_db),
+):
     raw_body = await request.body()
     try:
         payload = json.loads(raw_body)
     except json.JSONDecodeError as exc:
         raise AppError(422, "INVALID_WEBHOOK_PAYLOAD", "Payment webhook body must be valid JSON") from exc
-    inbox = ProductBillingService(db).process_webhook(provider, raw_body, signature, payload)
+    inbox = ProductBillingService(db).process_webhook(provider, raw_body, paddle_signature or signature, payload)
     return make_response({"event_id": inbox.provider_event_id, "status": inbox.status}, request=request)
 
 
