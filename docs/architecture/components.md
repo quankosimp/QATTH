@@ -103,6 +103,8 @@ Interface nghiệp vụ đề xuất:
 
 Adapter chịu trách nhiệm timeout/retry, request ID, structured schema validation, token/cost accounting, redaction và provider error mapping. Domain service quyết định state transition, authorization và dữ liệu nào được canonicalize.
 
+Model/prompt version không được activate chỉ bằng thao tác admin: backend yêu cầu immutable eval report có dataset checksum, sample count và metric đạt fixed policy threshold. Rollout dưới 100% giữ active baseline và chọn canary deterministically theo correlation subject; promote/rollback là activate version đã có evidence.
+
 Web search output là discovery candidate. URL verification/parser độc lập phải quyết định freshness và normalized fields.
 
 ## 8. Gemini Live adapter

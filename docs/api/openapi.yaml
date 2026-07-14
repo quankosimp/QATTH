@@ -3464,6 +3464,93 @@ paths:
       - FR-REC-004
       - NFR-AI-007
       x-implementation-status: implemented
+  /v1/admin/model-configurations/{configuration_id}/evaluation-reports:
+    get:
+      tags:
+      - Admin
+      - Operations
+      summary: List Model Evaluation Reports
+      operationId: listModelEvaluationReports
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: configuration_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Configuration Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse_list_ModelEvaluationReportView__'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      x-requirement-ids:
+      - FR-ADMIN-002
+      - NFR-AI-002
+      - NFR-AI-003
+      - NFR-AI-006
+      x-required-scopes:
+      - admin:model:read
+      x-implementation-status: implemented
+    post:
+      tags:
+      - Admin
+      - Operations
+      summary: Create Model Evaluation Report
+      operationId: createModelEvaluationReport
+      security:
+      - HTTPBearer: []
+      parameters:
+      - name: configuration_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Configuration Id
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+          title: Idempotency-Key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateModelEvaluationReportRequest'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse_ModelEvaluationReportView_'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      x-requirement-ids:
+      - FR-ADMIN-002
+      - NFR-AI-002
+      - NFR-AI-003
+      - NFR-AI-006
+      x-required-scopes:
+      - admin:model:write
+      x-implementation-status: implemented
 components:
   securitySchemes:
     bearerAuth:
@@ -6907,10 +6994,22 @@ components:
           maxLength: 500
           minLength: 3
           title: Reason
+        evaluation_report_id:
+          type: string
+          maxLength: 36
+          minLength: 36
+          title: Evaluation Report Id
+        rollout_percentage:
+          type: integer
+          maximum: 100.0
+          minimum: 1.0
+          title: Rollout Percentage
       additionalProperties: false
       type: object
       required:
       - reason
+      - evaluation_report_id
+      - rollout_percentage
       title: ActivateModelConfigurationRequest
     AdminResourceSummary:
       properties:
@@ -8780,6 +8879,7 @@ components:
           type: string
           enum:
           - draft
+          - canary
           - active
           - retired
           title: Status
@@ -8794,6 +8894,20 @@ components:
           - type: string
           - type: 'null'
           title: Output Schema Version
+        evaluation_report_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Evaluation Report Id
+        rollout_percentage:
+          type: integer
+          title: Rollout Percentage
+        activated_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Activated At
         created_at:
           type: string
           format: date-time
@@ -8807,6 +8921,9 @@ components:
       - provider
       - model
       - output_schema_version
+      - evaluation_report_id
+      - rollout_percentage
+      - activated_at
       - created_at
       title: ModelConfigurationView
     ModerationCaseView:
@@ -9786,3 +9903,178 @@ components:
       - training_eligible
       - created_at
       title: RecommendationFeedbackView
+    APIResponse_ModelEvaluationReportView_:
+      properties:
+        data:
+          anyOf:
+          - $ref: '#/components/schemas/ModelEvaluationReportView'
+          - type: 'null'
+        error:
+          anyOf:
+          - $ref: '#/components/schemas/ErrorDetail'
+          - type: 'null'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      type: object
+      required:
+      - data
+      - meta
+      title: APIResponse[ModelEvaluationReportView]
+    APIResponse_list_ModelEvaluationReportView__:
+      properties:
+        data:
+          anyOf:
+          - items:
+              $ref: '#/components/schemas/ModelEvaluationReportView'
+            type: array
+          - type: 'null'
+          title: Data
+        error:
+          anyOf:
+          - $ref: '#/components/schemas/ErrorDetail'
+          - type: 'null'
+        meta:
+          $ref: '#/components/schemas/Meta'
+      type: object
+      required:
+      - data
+      - meta
+      title: APIResponse[list[ModelEvaluationReportView]]
+    CreateModelEvaluationReportRequest:
+      properties:
+        dataset_key:
+          type: string
+          maxLength: 120
+          minLength: 2
+          pattern: ^[a-z][a-z0-9_.-]{1,119}$
+          title: Dataset Key
+        dataset_version:
+          type: string
+          maxLength: 80
+          minLength: 1
+          title: Dataset Version
+        dataset_sha256:
+          type: string
+          maxLength: 64
+          minLength: 64
+          pattern: ^[0-9a-fA-F]{64}$
+          title: Dataset Sha256
+        evaluator_version:
+          type: string
+          maxLength: 80
+          minLength: 1
+          title: Evaluator Version
+        sample_count:
+          type: integer
+          minimum: 1.0
+          title: Sample Count
+        metrics:
+          items:
+            $ref: '#/components/schemas/ModelEvaluationMetricInput'
+          type: array
+          maxItems: 20
+          minItems: 1
+          title: Metrics
+        external_report_id:
+          anyOf:
+          - type: string
+            maxLength: 255
+          - type: 'null'
+          title: External Report Id
+      additionalProperties: false
+      type: object
+      required:
+      - dataset_key
+      - dataset_version
+      - dataset_sha256
+      - evaluator_version
+      - sample_count
+      - metrics
+      title: CreateModelEvaluationReportRequest
+    ModelEvaluationMetricInput:
+      properties:
+        name:
+          type: string
+          maxLength: 80
+          minLength: 2
+          pattern: ^[a-z][a-z0-9_]{1,79}$
+          title: Name
+        value:
+          type: number
+          maximum: 1.0
+          minimum: 0.0
+          title: Value
+      additionalProperties: false
+      type: object
+      required:
+      - name
+      - value
+      title: ModelEvaluationMetricInput
+    ModelEvaluationReportView:
+      properties:
+        id:
+          type: string
+          title: Id
+        model_configuration_id:
+          type: string
+          title: Model Configuration Id
+        dataset_key:
+          type: string
+          title: Dataset Key
+        dataset_version:
+          type: string
+          title: Dataset Version
+        dataset_sha256:
+          type: string
+          title: Dataset Sha256
+        quality_policy_version:
+          type: string
+          title: Quality Policy Version
+        evaluator_version:
+          type: string
+          title: Evaluator Version
+        sample_count:
+          type: integer
+          title: Sample Count
+        metrics:
+          additionalProperties:
+            type: number
+          type: object
+          title: Metrics
+        criteria:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Criteria
+        status:
+          type: string
+          enum:
+          - passed
+          - failed
+          title: Status
+        external_report_id:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: External Report Id
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+      type: object
+      required:
+      - id
+      - model_configuration_id
+      - dataset_key
+      - dataset_version
+      - dataset_sha256
+      - quality_policy_version
+      - evaluator_version
+      - sample_count
+      - metrics
+      - criteria
+      - status
+      - external_report_id
+      - created_at
+      title: ModelEvaluationReportView

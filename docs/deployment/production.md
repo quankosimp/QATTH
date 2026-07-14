@@ -165,6 +165,7 @@ R2 credential phải được scope tối thiểu theo bucket/action. Frontend k
 | OPENAI_SEARCH_MODEL | No | Web search-capable model alias |
 | OPENAI_TIMEOUT_SECONDS | No | Provider timeout |
 | OPENAI_DAILY_BUDGET_MINOR | No | Cost guardrail |
+| AI_EVAL_MIN_SAMPLE_COUNT | No | Minimum representative sample count accepted by model activation gate |
 | GEMINI_API_KEY | Yes | Gemini Live credential |
 | GEMINI_LIVE_MODEL | No | Realtime model alias |
 | GEMINI_LIVE_SESSION_LIMIT | No | Application concurrency cap |
@@ -313,7 +314,7 @@ Khuyến nghị deployment team dùng canary hoặc rolling rollout:
 4. Tăng traffic theo gate.
 5. Giữ image trước để rollback.
 
-Rollback application không được rollback database destructively. Nếu schema đã expand, binary cũ phải tương thích; nếu không, dùng roll-forward fix. Model/prompt config rollback độc lập bằng activate version cũ.
+Rollback application không được rollback database destructively. Nếu schema đã expand, binary cũ phải tương thích; nếu không, dùng roll-forward fix. Model/prompt config rollback độc lập bằng activate version cũ cùng immutable eval evidence; canary allocation nằm trong backend configuration, không phụ thuộc image rollout.
 
 Feature flag phù hợp cho live web search, model version, reranker và billing enforcement; flag không được bỏ qua authorization hoặc migration invariant.
 

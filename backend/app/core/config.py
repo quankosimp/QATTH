@@ -77,6 +77,7 @@ class Settings(BaseSettings):
     provider_circuit_open_seconds: int = 30
     provider_bulkhead_limit: int = 20
     provider_bulkhead_lease_seconds: int = 180
+    ai_eval_min_sample_count: int = 20
 
     gemini_api_key: str | None = None
     gemini_cv_model: str = "gemini-3.5-flash"
@@ -147,6 +148,8 @@ class Settings(BaseSettings):
             raise ValueError("PROVIDER_RETRY_ATTEMPTS must be positive.")
         if self.provider_circuit_failure_threshold < 1 or self.provider_bulkhead_limit < 1:
             raise ValueError("Provider circuit and bulkhead limits must be positive.")
+        if self.ai_eval_min_sample_count < 1:
+            raise ValueError("AI_EVAL_MIN_SAMPLE_COUNT must be positive.")
         if self.gemini_live_session_limit < 1:
             raise ValueError("GEMINI_LIVE_SESSION_LIMIT must be positive.")
         if not 5 <= self.gemini_live_setup_timeout_seconds <= 60:

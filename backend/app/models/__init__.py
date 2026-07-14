@@ -84,6 +84,7 @@ from app.models.product_privacy import (
 from app.models.product_admin_ops import (
     AuditChainHead,
     ModelConfiguration,
+    ModelEvaluationReport,
     OperationalJob,
     OperationalJobDispatch,
     PrivilegedAuditEvent,

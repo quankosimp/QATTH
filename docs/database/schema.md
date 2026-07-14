@@ -28,7 +28,7 @@ Không lưu PDF trong PostgreSQL trừ artifact rất nhỏ có lý do được 
 | <code>0020</code>-<code>0023</code> | Payment inbox/reconciliation, billable interview boundary, recommendation feedback và auditable ranking v2 |
 | <code>0024</code>-<code>0028</code> | OIDC provider-session identity, catalog schedule invariants, cumulative payment reversal/account review, durable AI dispatch và worker processing leases |
 | <code>0029</code>-<code>0030</code> | Persisted async-run correlation và transactional outbox cho admin background-job retry |
-| <code>0031</code>-<code>0033</code> | DB-enforced immutability cho privacy audit events, confirmed CV versions, interview timeline, application history và recommendation feedback |
+| <code>0031</code>-<code>0034</code> | DB-enforced immutability cho privacy/domain history; model eval evidence, quality gate và staged rollout |
 
 Migration trong <code>migrations/versions/</code> là lịch sử physical schema bất biến. Bảng/constraint trong tài liệu chưa có revision tương ứng phải được coi là gap và cần migration riêng; không dùng <code>create_all</code> để thay thế migration ở production.
 
@@ -482,7 +482,11 @@ Refund reverse phần grant chưa dùng. Nếu grant đã dùng, account chuyể
 
 ### prompt_versions
 
-<code>id</code>, purpose, version, status draft/active/retired, template/config JSONB, output schema version, created/published actor/time. Unique purpose/version; active transition được audit.
+<code>id</code>, purpose, version, status draft/canary/active/retired, template/config JSONB, output schema version, eval report ID, rollout percentage, created/published actor/time. Unique purpose/version và tối đa một active/một canary mỗi purpose; immutable config fields bị chặn <code>UPDATE</code> ở DB.
+
+### model_evaluation_reports
+
+Immutable quality evidence: model configuration ID, dataset key/version/SHA-256, policy/evaluator version, sample count, normalized metrics, server-applied threshold criteria, pass/fail, optional external report ID, actor/time. Dataset row chứa CV/transcript không được lưu trong bảng này. Activation bắt buộc report <code>passed</code>; canary dưới 100% cần active baseline.
 
 ### model_runs
 

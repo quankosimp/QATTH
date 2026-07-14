@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, text
 
 from app.models.db import Base
 
@@ -22,6 +22,20 @@ class ModelConfiguration(Base):
         UniqueConstraint("purpose", "version", name="uq_product_model_configuration_version"),
         UniqueConstraint("created_by_user_id", "idempotency_key", name="uq_product_model_configuration_idempotency"),
         Index("ix_product_model_configurations_purpose_status", "purpose", "status"),
+        Index(
+            "uq_product_model_configuration_active_purpose",
+            "purpose",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+            sqlite_where=text("status = 'active'"),
+        ),
+        Index(
+            "uq_product_model_configuration_canary_purpose",
+            "purpose",
+            unique=True,
+            postgresql_where=text("status = 'canary'"),
+            sqlite_where=text("status = 'canary'"),
+        ),
     )
 
     id = Column(String(36), primary_key=True, default=_uuid)
@@ -36,10 +50,57 @@ class ModelConfiguration(Base):
     request_hash = Column(String(64), nullable=False)
     created_by_user_id = Column(String(36), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
     activated_by_user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    evaluation_report_id = Column(
+        String(36),
+        ForeignKey("product_model_evaluation_reports.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    rollout_percentage = Column(Integer, nullable=False, default=0)
     activation_reason = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     activated_at = Column(DateTime(timezone=True), nullable=True)
     retired_at = Column(DateTime(timezone=True), nullable=True)
+
+
+class ModelEvaluationReport(Base):
+    __tablename__ = "product_model_evaluation_reports"
+    __table_args__ = (
+        UniqueConstraint(
+            "created_by_user_id",
+            "idempotency_key",
+            name="uq_product_model_evaluation_report_idempotency",
+        ),
+        Index(
+            "ix_product_model_evaluation_reports_configuration_created",
+            "model_configuration_id",
+            "created_at",
+        ),
+    )
+
+    id = Column(String(36), primary_key=True, default=_uuid)
+    model_configuration_id = Column(
+        String(36),
+        ForeignKey("product_model_configurations.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    dataset_key = Column(String(120), nullable=False)
+    dataset_version = Column(String(80), nullable=False)
+    dataset_sha256 = Column(String(64), nullable=False)
+    quality_policy_version = Column(String(80), nullable=False)
+    evaluator_version = Column(String(80), nullable=False)
+    sample_count = Column(Integer, nullable=False)
+    metrics = Column(JSON, nullable=False)
+    criteria = Column(JSON, nullable=False)
+    status = Column(String(24), nullable=False)
+    external_report_id = Column(String(255), nullable=True)
+    idempotency_key = Column(String(255), nullable=False)
+    request_hash = Column(String(64), nullable=False)
+    created_by_user_id = Column(
+        String(36),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
 
 class OperationalJob(Base):

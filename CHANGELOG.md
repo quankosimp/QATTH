@@ -40,6 +40,7 @@ Tất cả thay đổi đáng chú ý của QATTH được ghi lại trong file 
 - CV confirmation and interview mutation paths now serialize on their aggregate rows; realtime token locking has one consistent order, event dedup runs inside the timeline lock, and confirmed CV/interview history rejects database updates.
 - Job-application status history and attributed recommendation feedback now reject database updates while retaining audited privacy-deletion compatibility.
 - OpenTelemetry now emits sampled, W3C-propagated OTLP traces across FastAPI, SQLAlchemy, Celery and provider calls; logs include active trace/span IDs and span attributes redact request queries and AI payloads.
+- Model/prompt activation now requires immutable, checksum-addressed evaluation evidence that passes server-owned purpose thresholds; deterministic canary allocation keeps an active baseline and supports audited promotion or rollback.
 - Interview credits are reserved at realtime token issuance and captured only after the first successful Gemini output delivery; timeout reconciliation now follows CV/interview outcomes.
 - Client checkout redirect URLs are retained only by QATTH and are no longer copied into provider metadata.
 - Payment reversal dùng provider transaction reference, hỗ trợ partial reversal và chỉ đưa account vào review khi phát sinh debt.

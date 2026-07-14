@@ -18,7 +18,7 @@ from app.models.db import AuthToken, User
 from app.models.identity import AccountStatusEvent, UserProductProfile, UserSession
 from app.models.product_cv import CvAnalysis, CvScan, ProductCV
 from app.models.product_interview import ProductInterview, ProductInterviewReport
-from app.models.product_admin_ops import AuditChainHead, ModelConfiguration, OperationalJob, OperationalJobDispatch, PrivilegedAuditEvent, PrivilegedCommand
+from app.models.product_admin_ops import AuditChainHead, ModelConfiguration, ModelEvaluationReport, OperationalJob, OperationalJobDispatch, PrivilegedAuditEvent, PrivilegedCommand
 from app.models.product_jobs import JobSearchRun, JobSource, JobSourceRecord, ProductJob
 from app.models.product_privacy import PrivacyRequest
 from app.models.product_recommendations import JobApplication, JobModerationCase, RecommendationRun
@@ -29,9 +29,11 @@ from app.schemas.product_admin_ops import (
     AccountStatusView,
     BackgroundJobPage,
     BackgroundJobView,
+    CreateModelEvaluationReportRequest,
     CreateModelConfigurationRequest,
     JobSourceAdminView,
     ModelConfigurationView,
+    ModelEvaluationReportView,
     ModerationCaseView,
     OpsDiagnosticsView,
     ProviderUsageSummaryView,
@@ -94,33 +96,162 @@ class ProductAdminOpsService:
         self.db.refresh(record)
         return record
 
-    def activate_model_configuration(self, current: ProductCurrentUser, configuration_id: str, reason: str, idempotency_key: str, context: dict[str, Any]) -> ModelConfiguration:
-        command, replay = self._command(current, "activate_model_configuration:" + configuration_id, idempotency_key, {"reason": reason})
+    def list_model_evaluation_reports(
+        self,
+        current: ProductCurrentUser,
+        configuration_id: str,
+        context: dict[str, Any],
+    ) -> list[ModelEvaluationReportView]:
+        configuration = self.db.get(ModelConfiguration, configuration_id)
+        if configuration is None:
+            raise AppError(404, "MODEL_CONFIGURATION_NOT_FOUND", "Model configuration was not found")
+        records = list(
+            self.db.scalars(
+                select(ModelEvaluationReport)
+                .where(ModelEvaluationReport.model_configuration_id == configuration.id)
+                .order_by(ModelEvaluationReport.created_at.desc())
+            )
+        )
+        self._audit(
+            current,
+            "model_evaluation_report.list",
+            "model_configuration",
+            configuration.id,
+            None,
+            context,
+            {"result_count": len(records)},
+        )
+        self.db.commit()
+        return [self.evaluation_report_view(item) for item in records]
+
+    def create_model_evaluation_report(
+        self,
+        current: ProductCurrentUser,
+        configuration_id: str,
+        payload: CreateModelEvaluationReportRequest,
+        idempotency_key: str,
+        context: dict[str, Any],
+    ) -> ModelEvaluationReport:
+        configuration = self.db.get(ModelConfiguration, configuration_id)
+        if configuration is None:
+            raise AppError(404, "MODEL_CONFIGURATION_NOT_FOUND", "Model configuration was not found")
+        request_hash = self._hash(payload.model_dump(mode="json"))
+        existing = self.db.scalar(
+            select(ModelEvaluationReport).where(
+                ModelEvaluationReport.created_by_user_id == current.id,
+                ModelEvaluationReport.idempotency_key == idempotency_key,
+            )
+        )
+        if existing is not None:
+            if existing.request_hash != request_hash or existing.model_configuration_id != configuration.id:
+                raise AppError(409, "IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used with a different request")
+            return existing
+        settings = get_settings()
+        if payload.sample_count < settings.ai_eval_min_sample_count:
+            raise AppError(
+                422,
+                "AI_EVAL_SAMPLE_TOO_SMALL",
+                "Evaluation sample count is below the configured quality gate",
+                details={"minimum_sample_count": settings.ai_eval_min_sample_count},
+            )
+        from app.services.model_quality import QUALITY_POLICY_VERSION, evaluate_model_metrics
+
+        report_status, metrics, criteria = evaluate_model_metrics(configuration.purpose, payload.metrics)
+        report = ModelEvaluationReport(
+            model_configuration_id=configuration.id,
+            dataset_key=payload.dataset_key,
+            dataset_version=payload.dataset_version,
+            dataset_sha256=payload.dataset_sha256.lower(),
+            quality_policy_version=QUALITY_POLICY_VERSION,
+            evaluator_version=payload.evaluator_version,
+            sample_count=payload.sample_count,
+            metrics=metrics,
+            criteria=criteria,
+            status=report_status,
+            external_report_id=payload.external_report_id,
+            idempotency_key=idempotency_key,
+            request_hash=request_hash,
+            created_by_user_id=current.id,
+        )
+        self.db.add(report)
+        self.db.flush()
+        self._audit(
+            current,
+            "model_evaluation_report.create",
+            "model_evaluation_report",
+            report.id,
+            None,
+            context,
+            {
+                "model_configuration_id": configuration.id,
+                "dataset_key": report.dataset_key,
+                "dataset_version": report.dataset_version,
+                "status": report.status,
+            },
+        )
+        self.db.commit()
+        self.db.refresh(report)
+        return report
+
+    def activate_model_configuration(self, current: ProductCurrentUser, configuration_id: str, payload, idempotency_key: str, context: dict[str, Any]) -> ModelConfiguration:
+        command, replay = self._command(current, "activate_model_configuration:" + configuration_id, idempotency_key, payload.model_dump(mode="json"))
         if replay:
             return self.db.get(ModelConfiguration, command.resource_id)
         record = self.db.scalar(select(ModelConfiguration).where(ModelConfiguration.id == configuration_id).with_for_update())
         if record is None:
             raise AppError(404, "MODEL_CONFIGURATION_NOT_FOUND", "Model configuration was not found")
+        report = self.db.get(ModelEvaluationReport, payload.evaluation_report_id)
+        if report is None or report.model_configuration_id != record.id:
+            raise AppError(422, "AI_EVAL_REPORT_INVALID", "Evaluation report does not belong to this model configuration")
+        if report.status != "passed":
+            raise AppError(409, "AI_EVAL_GATE_FAILED", "Model configuration did not pass its quality gate")
         now = _utcnow()
-        active = list(self.db.scalars(select(ModelConfiguration).where(ModelConfiguration.purpose == record.purpose, ModelConfiguration.status == "active").with_for_update()))
-        for item in active:
-            if item.id != record.id:
-                item.status = "retired"
-                item.retired_at = now
-        record.status = "active"
+        deployed = list(
+            self.db.scalars(
+                select(ModelConfiguration)
+                .where(
+                    ModelConfiguration.purpose == record.purpose,
+                    ModelConfiguration.status.in_(["active", "canary"]),
+                )
+                .with_for_update()
+            )
+        )
+        if payload.rollout_percentage < 100:
+            baseline = next((item for item in deployed if item.status == "active" and item.id != record.id), None)
+            if baseline is None:
+                raise AppError(409, "MODEL_CANARY_BASELINE_REQUIRED", "A canary rollout requires an active baseline")
+            for item in deployed:
+                if item.status == "canary" and item.id != record.id:
+                    item.status = "retired"
+                    item.rollout_percentage = 0
+                    item.retired_at = now
+            record.status = "canary"
+        else:
+            for item in deployed:
+                if item.id != record.id:
+                    item.status = "retired"
+                    item.rollout_percentage = 0
+                    item.retired_at = now
+            record.status = "active"
         record.activated_by_user_id = current.id
-        record.activation_reason = reason
+        record.evaluation_report_id = report.id
+        record.rollout_percentage = payload.rollout_percentage
+        record.activation_reason = payload.reason
         record.activated_at = now
         record.retired_at = None
         self._complete_command(command, "model_configuration", record.id, {"id": record.id})
-        self._audit(current, "model_configuration.activate", "model_configuration", record.id, reason, context, {"purpose": record.purpose, "version": record.version})
+        self._audit(current, "model_configuration.activate", "model_configuration", record.id, payload.reason, context, {"purpose": record.purpose, "version": record.version, "evaluation_report_id": report.id, "rollout_percentage": record.rollout_percentage})
         self.db.commit()
         self.db.refresh(record)
         return record
 
     @staticmethod
     def model_view(record: ModelConfiguration) -> ModelConfigurationView:
-        return ModelConfigurationView(id=record.id, purpose=record.purpose, version=record.version, status=record.status, provider=record.provider, model=record.model, output_schema_version=record.output_schema_version, created_at=record.created_at)
+        return ModelConfigurationView(id=record.id, purpose=record.purpose, version=record.version, status=record.status, provider=record.provider, model=record.model, output_schema_version=record.output_schema_version, evaluation_report_id=record.evaluation_report_id, rollout_percentage=record.rollout_percentage, activated_at=record.activated_at, created_at=record.created_at)
+
+    @staticmethod
+    def evaluation_report_view(record: ModelEvaluationReport) -> ModelEvaluationReportView:
+        return ModelEvaluationReportView(id=record.id, model_configuration_id=record.model_configuration_id, dataset_key=record.dataset_key, dataset_version=record.dataset_version, dataset_sha256=record.dataset_sha256, quality_policy_version=record.quality_policy_version, evaluator_version=record.evaluator_version, sample_count=record.sample_count, metrics=record.metrics, criteria=record.criteria, status=record.status, external_report_id=record.external_report_id, created_at=record.created_at)
 
     def job_sources(self, current: ProductCurrentUser, context: dict[str, Any], source_status: str | None = None, key: str | None = None, period_start: datetime | None = None, period_end: datetime | None = None) -> list[JobSourceAdminView]:
         start, end = self._period(period_start, period_end, 90)

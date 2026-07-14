@@ -14,9 +14,11 @@ from app.schemas.product_admin_ops import (
     AdminUserSummary,
     BackgroundJobPage,
     BackgroundJobView,
+    CreateModelEvaluationReportRequest,
     CreateModelConfigurationRequest,
     JobSourceAdminView,
     ModelConfigurationView,
+    ModelEvaluationReportView,
     ModerationCaseView,
     OpsDiagnosticsView,
     ProviderUsageSummaryView,
@@ -55,10 +57,22 @@ def create_model_configuration(payload: CreateModelConfigurationRequest, request
     return make_response(service.model_view(service.create_model_configuration(current, payload, idempotency_key, _context(request))), request=request)
 
 
+@router.get("/admin/model-configurations/{configuration_id}/evaluation-reports", response_model=APIResponse[list[ModelEvaluationReportView]])
+def list_model_evaluation_reports(configuration_id: str, request: Request, current: ProductCurrentUser = Depends(model_read), db: Session = Depends(get_db)):
+    return make_response(ProductAdminOpsService(db).list_model_evaluation_reports(current, configuration_id, _context(request)), request=request)
+
+
+@router.post("/admin/model-configurations/{configuration_id}/evaluation-reports", response_model=APIResponse[ModelEvaluationReportView], status_code=status.HTTP_201_CREATED)
+def create_model_evaluation_report(configuration_id: str, payload: CreateModelEvaluationReportRequest, request: Request, idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128), current: ProductCurrentUser = Depends(model_write), db: Session = Depends(get_db)):
+    service = ProductAdminOpsService(db)
+    report = service.create_model_evaluation_report(current, configuration_id, payload, idempotency_key, _context(request))
+    return make_response(service.evaluation_report_view(report), request=request)
+
+
 @router.post("/admin/model-configurations/{configuration_id}/activate", response_model=APIResponse[ModelConfigurationView])
 def activate_model_configuration(configuration_id: str, payload: ActivateModelConfigurationRequest, request: Request, idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128), current: ProductCurrentUser = Depends(model_write), db: Session = Depends(get_db)):
     service = ProductAdminOpsService(db)
-    return make_response(service.model_view(service.activate_model_configuration(current, configuration_id, payload.reason, idempotency_key, _context(request))), request=request)
+    return make_response(service.model_view(service.activate_model_configuration(current, configuration_id, payload, idempotency_key, _context(request))), request=request)
 
 
 @router.get("/admin/job-sources", response_model=APIResponse[list[JobSourceAdminView]])

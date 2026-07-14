@@ -21,16 +21,56 @@ class ActivateModelConfigurationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     reason: str = Field(min_length=3, max_length=500)
+    evaluation_report_id: str = Field(min_length=36, max_length=36)
+    rollout_percentage: int = Field(ge=1, le=100)
+
+
+class ModelEvaluationMetricInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=2, max_length=80, pattern=r"^[a-z][a-z0-9_]{1,79}$")
+    value: float = Field(ge=0, le=1)
+
+
+class CreateModelEvaluationReportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    dataset_key: str = Field(min_length=2, max_length=120, pattern=r"^[a-z][a-z0-9_.-]{1,119}$")
+    dataset_version: str = Field(min_length=1, max_length=80)
+    dataset_sha256: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-fA-F]{64}$")
+    evaluator_version: str = Field(min_length=1, max_length=80)
+    sample_count: int = Field(ge=1)
+    metrics: list[ModelEvaluationMetricInput] = Field(min_length=1, max_length=20)
+    external_report_id: str | None = Field(default=None, max_length=255)
+
+
+class ModelEvaluationReportView(BaseModel):
+    id: str
+    model_configuration_id: str
+    dataset_key: str
+    dataset_version: str
+    dataset_sha256: str
+    quality_policy_version: str
+    evaluator_version: str
+    sample_count: int
+    metrics: dict[str, float]
+    criteria: list[dict[str, Any]]
+    status: Literal["passed", "failed"]
+    external_report_id: str | None
+    created_at: datetime
 
 
 class ModelConfigurationView(BaseModel):
     id: str
     purpose: str
     version: str
-    status: Literal["draft", "active", "retired"]
+    status: Literal["draft", "canary", "active", "retired"]
     provider: str
     model: str
     output_schema_version: str | None
+    evaluation_report_id: str | None
+    rollout_percentage: int
+    activated_at: datetime | None
     created_at: datetime
 
 

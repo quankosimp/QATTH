@@ -24,6 +24,8 @@ NEW_OPERATION_METADATA = {
     ("/v1/admin/credit-adjustments/{adjustment_id}/reject", "post"): ("rejectCreditAdjustment", ["FR-ADMIN-005", "FR-BILL-004"], ["admin:billing:approve"]),
     ("/v1/admin/job-sources/{source_id}", "patch"): ("updateJobSource", ["FR-ADMIN-004"], ["admin:jobs:write"]),
     ("/v1/admin/model-configurations/{configuration_id}/activate", "post"): ("activateModelConfiguration", ["FR-ADMIN-002", "NFR-AI-006"], ["admin:model:write"]),
+    ("/v1/admin/model-configurations/{configuration_id}/evaluation-reports", "get"): ("listModelEvaluationReports", ["FR-ADMIN-002", "NFR-AI-002", "NFR-AI-003", "NFR-AI-006"], ["admin:model:read"]),
+    ("/v1/admin/model-configurations/{configuration_id}/evaluation-reports", "post"): ("createModelEvaluationReport", ["FR-ADMIN-002", "NFR-AI-002", "NFR-AI-003", "NFR-AI-006"], ["admin:model:write"]),
     ("/v1/admin/moderation-cases", "get"): ("listModerationCases", ["FR-ADMIN-004"], ["admin:jobs:read"]),
     ("/v1/admin/moderation-cases/{case_id}/resolve", "post"): ("resolveModerationCase", ["FR-ADMIN-004"], ["admin:jobs:write"]),
     ("/v1/admin/resources/{resource_type}/{resource_id}", "get"): ("getAdminResource", ["FR-ADMIN-001"], ["admin:resources:read"]),
