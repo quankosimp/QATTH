@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import http.client
 import ipaddress
+import re
 import socket
 import ssl
 from dataclasses import dataclass
@@ -45,7 +46,28 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
 
 
 class SafeJobFetcher:
-    def fetch(self, url: str) -> VerifiedPage:
+    expired_phrases = (
+        "job is no longer available",
+        "job has expired",
+        "position has been filled",
+        "no longer accepting applications",
+        "tin tuyển dụng đã hết hạn",
+        "việc làm đã hết hạn",
+        "không còn nhận hồ sơ",
+        "vị trí đã được tuyển",
+    )
+    stopwords = {
+        "and", "the", "for", "with", "inc", "ltd", "llc", "company",
+        "cong", "ty", "tnhh", "co", "phan", "va", "cho", "tai",
+    }
+
+    def fetch(
+        self,
+        url: str,
+        *,
+        expected_title: str | None = None,
+        expected_company: str | None = None,
+    ) -> VerifiedPage:
         current = url
         for _ in range(4):
             parsed, pinned_ip = self._resolve_public_url(current)
@@ -98,7 +120,14 @@ class SafeJobFetcher:
                     node.decompose()
                 title = soup.title.get_text(" ", strip=True)[:500] if soup.title else None
                 description = " ".join(soup.get_text(" ", strip=True).split())[:20000] or None
-            outcome = "verified" if response.status == 200 else "unavailable"
+            outcome = self._classify(
+                response.status,
+                content_type,
+                title,
+                description,
+                expected_title,
+                expected_company,
+            )
             return VerifiedPage(
                 final_url=current,
                 http_status=response.status,
@@ -115,6 +144,8 @@ class SafeJobFetcher:
         if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
             raise AppError(422, "JOB_SOURCE_URL_INVALID", "Job source URL is invalid")
         port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        if port not in {80, 443}:
+            raise AppError(422, "JOB_SOURCE_PORT_BLOCKED", "Job source port is not allowed")
         try:
             resolved = socket.getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM)
         except socket.gaierror as exc:
@@ -127,3 +158,40 @@ class SafeJobFetcher:
             if not ip.is_global or ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
                 raise AppError(422, "JOB_SOURCE_URL_BLOCKED", "Job source resolves to a non-public address")
         return parsed, addresses[0]
+
+    @classmethod
+    def _classify(
+        cls,
+        status: int,
+        content_type: str,
+        title: str | None,
+        description: str | None,
+        expected_title: str | None,
+        expected_company: str | None,
+    ) -> str:
+        if status != 200:
+            return "unavailable"
+        if "html" not in content_type:
+            return "content_type_unsupported"
+        page_text = " ".join(value for value in (title, description) if value).casefold()
+        if any(phrase in page_text for phrase in cls.expired_phrases):
+            return "expired"
+        if not page_text:
+            return "content_empty"
+        if expected_title and not cls._matches(page_text, expected_title, minimum_ratio=0.5):
+            return "title_mismatch"
+        if expected_company and not cls._matches(page_text, expected_company, minimum_ratio=0.34):
+            return "company_mismatch"
+        return "verified"
+
+    @classmethod
+    def _matches(cls, page_text: str, expected: str, minimum_ratio: float) -> bool:
+        expected_tokens = {
+            token
+            for token in re.findall(r"[\w+#.]+", expected.casefold())
+            if len(token) > 1 and token not in cls.stopwords
+        }
+        if not expected_tokens:
+            return True
+        page_tokens = set(re.findall(r"[\w+#.]+", page_text))
+        return len(expected_tokens & page_tokens) / len(expected_tokens) >= minimum_ratio

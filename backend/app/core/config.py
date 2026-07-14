@@ -54,10 +54,10 @@ class Settings(BaseSettings):
 
     openai_api_key: str | None = None
     openai_project_id: str | None = None
-    openai_cv_model: str = "gpt-5.6-luna"
-    openai_evaluation_model: str = "gpt-5.6-luna"
+    openai_cv_model: str = "gpt-5.6"
+    openai_evaluation_model: str = "gpt-5.6"
     openai_embedding_model: str = "text-embedding-3-large"
-    openai_search_model: str = "gpt-5.6-luna"
+    openai_search_model: str = "gpt-5.6"
     openai_timeout_seconds: int = 60
     openai_daily_budget_minor: int = 500_000
     openai_monthly_budget_minor: int = 10_000_000
@@ -90,6 +90,10 @@ class Settings(BaseSettings):
     job_search_provider: str = "openai_web_search"
     serpapi_api_key: str | None = None
     job_search_default_location: str = "Vietnam"
+    job_search_country_code: str = "VN"
+    job_search_allowed_domains: list[str] = Field(default_factory=list)
+    job_search_blocked_domains: list[str] = Field(default_factory=list)
+    job_search_live_external_access: bool = True
 
     otel_enabled: bool = False
     otel_service_name: str = "qatth-api"
@@ -136,6 +140,17 @@ class Settings(BaseSettings):
             raise ValueError("GEMINI_LIVE_AUDIO_CHUNK_MAX_BYTES must be between 3200 and 65536.")
         if self.openai_daily_budget_minor < 1 or self.openai_monthly_budget_minor < 1:
             raise ValueError("OpenAI provider budgets must be positive.")
+        if len(self.job_search_country_code) != 2 or not self.job_search_country_code.isalpha():
+            raise ValueError("JOB_SEARCH_COUNTRY_CODE must be an ISO 3166-1 alpha-2 code.")
+        allowed = {item.casefold() for item in self.job_search_allowed_domains}
+        blocked = {item.casefold() for item in self.job_search_blocked_domains}
+        if len(allowed) > 100 or len(blocked) > 100:
+            raise ValueError("Job search domain lists may contain at most 100 entries.")
+        if allowed & blocked:
+            raise ValueError("A job search domain cannot be both allowed and blocked.")
+        for domain in allowed | blocked:
+            if not domain or "://" in domain or "/" in domain or ":" in domain:
+                raise ValueError("Job search domains must be hostnames without scheme, path, or port.")
 
         if self.app_env != "production":
             return self
@@ -161,6 +176,8 @@ class Settings(BaseSettings):
                 errors.append(f"{name} is required in production")
         if "*" in self.cors_origins:
             errors.append("Wildcard CORS is not allowed in production")
+        if self.job_search_provider == "openai_web_search" and not self.job_search_allowed_domains:
+            errors.append("JOB_SEARCH_ALLOWED_DOMAINS is required for OpenAI web search in production")
         if errors:
             raise ValueError("; ".join(errors))
         return self

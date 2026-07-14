@@ -96,6 +96,7 @@ class JobSearchRunView(BaseModel):
     provider_model_configuration_id: str | None
     provider_usage: dict[str, Any] | None
     provider_estimated_cost_minor: int | None
+    error: dict[str, Any] | None
     events_url: str
     results_url: str
     created_at: datetime

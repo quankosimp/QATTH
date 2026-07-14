@@ -267,12 +267,16 @@ def execute_product_job_search_task(run_id: str) -> dict:
         db.rollback()
         run = db.get(JobSearchRun, run_id)
         if run is not None:
+            from app.core.errors import AppError
+
+            code = exc.code if isinstance(exc, AppError) else "JOB_SEARCH_FAILED"
+            message = exc.message if isinstance(exc, AppError) else "Job search execution failed"
             run.status = "failed"
-            run.error = {"code": "JOB_SEARCH_FAILED", "message": str(exc)[:1000]}
+            run.error = {"code": code, "message": message}
             run.completed_at = datetime.now(UTC)
             db.commit()
             ProductJobSearchService(db).emit(run_id, "run.failed", run.error)
-        raise
+        return {"status": "failed", "run_id": run_id}
     finally:
         db.close()
 

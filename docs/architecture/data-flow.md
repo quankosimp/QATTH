@@ -129,7 +129,7 @@ sequenceDiagram
     C->>S: Connect SSE
     W->>DB: FTS + filters + vector top-K
     W->>O: Live web search when requested/needed
-    O-->>W: URLs/snippets/citations
+    O-->>W: Search calls + URLs/citations/full source list
     W->>J: Safe fetch/HEAD and verify
     J-->>W: JD/status
     W->>DB: Normalize, deduplicate, snapshot, freshness
@@ -147,7 +147,9 @@ Retrieval policy:
 - Indexed search luôn chạy được khi web provider degraded.
 - Live web search bổ sung freshness/coverage, không thay PostgreSQL.
 - Source URL phải qua allow/deny policy, redirect limit và safe parser.
+- Structured provider output phải qua local schema/business validation; source URL không có provider evidence bị loại.
 - Job active là trạng thái xác minh có thời hạn, không phải claim của LLM.
+- Trang không phải HTML, hết hạn hoặc không khớp title/company được lưu rejection outcome và không xuất hiện trong live results.
 - Dedup giữ tất cả source references và raw snapshots.
 - Hard filter không do LLM quyết định.
 - Explanation chỉ chạy top-N để giảm cost và hallucination.
@@ -158,6 +160,7 @@ SSE event tối thiểu:
 - <code>source.progress</code>
 - <code>job.discovered</code>
 - <code>job.verified</code>
+- <code>job.rejected</code>
 - <code>results.updated</code>
 - <code>run.completed</code>
 - <code>run.failed</code>

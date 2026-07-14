@@ -169,6 +169,19 @@ R2 credential phải được scope tối thiểu theo bucket/action. Frontend k
 
 Model name không hard-code trong domain. Thay model/config đi qua versioned model configuration và evaluation.
 
+### Job discovery
+
+| Variable | Secret | Purpose |
+|---|---:|---|
+| JOB_SEARCH_PROVIDER | No | Live discovery adapter; Product v1 uses <code>openai_web_search</code> |
+| JOB_SEARCH_DEFAULT_LOCATION | No | Product/default query location |
+| JOB_SEARCH_COUNTRY_CODE | No | ISO alpha-2 approximate web-search country |
+| JOB_SEARCH_ALLOWED_DOMAINS | No | Reviewed source hostnames; required in production |
+| JOB_SEARCH_BLOCKED_DOMAINS | No | Explicitly prohibited source hostnames |
+| JOB_SEARCH_LIVE_EXTERNAL_ACCESS | No | Must remain true when realtime Internet freshness is required |
+
+Domain values không chứa scheme/path/port. Thay allowlist cần product/legal review; application vẫn thực hiện SSRF-safe fetch và active-page verification sau provider discovery.
+
 ### Billing
 
 | Variable | Secret | Purpose |

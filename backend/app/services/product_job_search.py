@@ -113,7 +113,7 @@ class ProductJobSearchService:
             filters=payload.filters.model_dump(mode="json"),
             maximum_results=payload.maximum_results,
             cv_version_id=payload.cv_version_id,
-            progress={"sources_completed": 0, "jobs_discovered": 0, "jobs_verified": 0, "results_ready": 0},
+            progress={"sources_completed": 0, "jobs_discovered": 0, "jobs_verified": 0, "jobs_rejected": 0, "results_ready": 0},
             degraded_reasons=[],
             idempotency_key=idempotency_key,
             request_hash=request_hash,
@@ -174,7 +174,7 @@ class ProductJobSearchService:
 
     def execute(self, run_id: str) -> None:
         run = self.db.scalar(select(JobSearchRun).where(JobSearchRun.id == run_id).with_for_update())
-        if run is None or run.status == "completed":
+        if run is None or run.status in {"completed", "failed"}:
             return
         run.status = "searching"
         run.started_at = run.started_at or _utcnow()
@@ -225,6 +225,22 @@ class ProductJobSearchService:
                         job = self._verify_and_upsert(item, provider)
                     except AppError as exc:
                         self._degrade(run, exc.code)
+                        run.progress = {
+                            **run.progress,
+                            "jobs_rejected": run.progress.get("jobs_rejected", 0) + 1,
+                        }
+                        self.db.commit()
+                        self.emit(
+                            run.id,
+                            "job.rejected",
+                            {
+                                "code": exc.code,
+                                "verification_outcome": (exc.details or {}).get("verification_outcome"),
+                                "source_url_fingerprint": hashlib.sha256(
+                                    str(item.get("source_url") or "").encode("utf-8")
+                                ).hexdigest(),
+                            },
+                        )
                         continue
                     if not self._job_matches_filters(job, run.filters):
                         self.emit(run.id, "job.filtered", {"job_id": job.id, "reason": "structured_filters"})
@@ -245,6 +261,11 @@ class ProductJobSearchService:
                     resource_id=run.id,
                     error=exc,
                 )
+                run.progress = {
+                    **run.progress,
+                    "sources_completed": run.progress.get("sources_completed", 0) + 1,
+                }
+                self.db.commit()
                 if run.mode == "live":
                     raise
                 self._degrade(run, exc.code)
@@ -363,6 +384,7 @@ class ProductJobSearchService:
             provider_model_configuration_id=run.provider_model_configuration_id,
             provider_usage=run.provider_usage,
             provider_estimated_cost_minor=run.provider_estimated_cost_minor,
+            error=run.error,
             events_url="/v1/job-search-runs/" + run.id + "/events",
             results_url="/v1/job-search-runs/" + run.id + "/results",
             created_at=run.created_at,
@@ -530,7 +552,11 @@ class ProductJobSearchService:
         return {"job": job, "lexical": lexical, "vector": vector, "freshness": freshness, "source": source_score, "rerank": rerank, "final": final, "reasons": reasons, "gaps": gaps}
 
     def _verify_and_upsert(self, item: dict[str, Any], provider: dict[str, Any]) -> ProductJob:
-        page = SafeJobFetcher().fetch(item["source_url"])
+        page = SafeJobFetcher().fetch(
+            item["source_url"],
+            expected_title=item.get("title"),
+            expected_company=item.get("company_name"),
+        )
         parsed = urlparse(page.final_url)
         domain = parsed.hostname.lower() if parsed.hostname else "unknown"
         source = self.db.scalar(select(JobSource).where(JobSource.base_domain == domain))
@@ -560,10 +586,10 @@ class ProductJobSearchService:
         job.description_text = description
         job.description_completeness = "full" if page.description and len(page.description) > 1000 else ("partial" if description else "unavailable")
         job.skills = self._normalize_skills(item.get("skills", []))
-        job.status = "active" if page.outcome == "verified" else "invalid"
+        job.status = "active" if page.outcome == "verified" else ("expired" if page.outcome == "expired" else "invalid")
         job.last_seen_at = now
         job.verified_at = now if page.outcome == "verified" else None
-        job.expires_at = now + timedelta(days=1)
+        job.expires_at = now + timedelta(days=1) if page.outcome == "verified" else now
         normalized_url = page.final_url.rstrip("/")
         url_hash = hashlib.sha256(normalized_url.encode()).hexdigest()
         record = self.db.scalar(select(JobSourceRecord).where(JobSourceRecord.source_id == source.id, JobSourceRecord.url_fingerprint == url_hash))
@@ -572,7 +598,7 @@ class ProductJobSearchService:
             self.db.add(record)
             self.db.flush()
         record.job_id = job.id
-        record.status = "verified" if page.outcome == "verified" else "unavailable"
+        record.status = "verified" if page.outcome == "verified" else page.outcome
         record.last_seen_at = now
         record.last_checked_at = now
         record.http_status = page.http_status
@@ -610,6 +636,13 @@ class ProductJobSearchService:
             self.db.flush()
         source.last_healthy_at = now if page.outcome == "verified" else source.last_healthy_at
         self.db.commit()
+        if page.outcome != "verified":
+            raise AppError(
+                422,
+                "JOB_SOURCE_NOT_VERIFIED",
+                "Job source did not pass active posting verification",
+                details={"verification_outcome": page.outcome},
+            )
         self._ensure_embedding(job, snapshot)
         return job
 

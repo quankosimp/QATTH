@@ -49,4 +49,4 @@ def test_job_search_has_structured_salary_filters_and_provider_lineage() -> None
     filters = schemas["JobSearchFilters"]["properties"]
     assert {"salary_min_minor", "salary_max_minor", "salary_currency", "salary_period"}.issubset(filters)
     run = schemas["JobSearchRunView"]["properties"]
-    assert {"provider_run_id", "provider_model", "provider_usage", "provider_estimated_cost_minor"}.issubset(run)
+    assert {"provider_run_id", "provider_model", "provider_usage", "provider_estimated_cost_minor", "error"}.issubset(run)

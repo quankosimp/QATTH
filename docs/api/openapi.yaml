@@ -8498,6 +8498,12 @@ components:
           - type: integer
           - type: 'null'
           title: Provider Estimated Cost Minor
+        error:
+          anyOf:
+          - additionalProperties: true
+            type: object
+          - type: 'null'
+          title: Error
         events_url:
           type: string
           title: Events Url
@@ -8528,6 +8534,7 @@ components:
       - provider_model_configuration_id
       - provider_usage
       - provider_estimated_cost_minor
+      - error
       - events_url
       - results_url
       - created_at

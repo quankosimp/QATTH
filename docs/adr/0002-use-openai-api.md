@@ -154,7 +154,11 @@ Negative:
 
 ## Implementation status
 
-Decision đã accepted nhưng implementation production còn pending. Demo không được xem là tuân thủ ADR cho đến khi có adapter, model run audit, structured validation, evaluation suite, privacy control, timeout/retry, cost guardrail và degraded behavior.
+Backend boundary đã implement cho structured extraction/evaluation, embeddings, Responses API web search, top-N explanation, model/provider usage audit, timeout/retry/circuit/bulkhead, budget guardrail và degraded behavior. Web discovery dùng <code>web_search</code>, yêu cầu live access, lưu citation cùng full source list, validate output cục bộ và xác minh trang trước khi gắn <code>verified</code>.
+
+Tài liệu protocol tham chiếu: [OpenAI web search guide](https://developers.openai.com/api/docs/guides/tools-web-search) và [Responses API](https://developers.openai.com/api/docs/api-reference/responses/create).
+
+Các bằng chứng còn pending không phải code boundary: staging call với credential/project thật, domain allowlist đã legal/product review, retrieval/citation evaluation dataset và cost/latency report theo model configuration.
 
 ## Revisit triggers
 

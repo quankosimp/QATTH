@@ -2,29 +2,92 @@ from __future__ import annotations
 
 import json
 import math
-import os
-from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from typing import Any, Literal
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+from app.core.config import Settings, get_settings
 from app.core.errors import AppError
 from app.core.provider_resilience import get_provider_executor
 
 
+class LiveJobCandidate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=500)
+    company_name: str = Field(min_length=1, max_length=500)
+    location: str | None = Field(default=None, max_length=500)
+    remote_mode: Literal["onsite", "hybrid", "remote", "unknown"]
+    employment_type: str | None = Field(default=None, max_length=100)
+    seniority: str | None = Field(default=None, max_length=100)
+    salary_min_minor: int | None = Field(default=None, ge=0)
+    salary_max_minor: int | None = Field(default=None, ge=0)
+    salary_currency: str | None = Field(default=None, min_length=3, max_length=3)
+    salary_period: str | None = Field(default=None, max_length=20)
+    description: str | None = Field(default=None, max_length=20_000)
+    skills: list[str] = Field(default_factory=list, max_length=50)
+    source_url: AnyHttpUrl
+    source_job_id: str | None = Field(default=None, max_length=255)
+    posted_at: str | None = Field(default=None, max_length=100)
+
+    @field_validator("skills")
+    @classmethod
+    def validate_skills(cls, values: list[str]) -> list[str]:
+        if any(not value.strip() or len(value) > 100 for value in values):
+            raise ValueError("skills must contain non-empty values up to 100 characters")
+        return values
+
+    @field_validator("salary_currency")
+    @classmethod
+    def normalize_currency(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.upper()
+        if not value.isalpha():
+            raise ValueError("salary_currency must be an ISO 4217 code")
+        return value
+
+    @model_validator(mode="after")
+    def validate_salary(self) -> "LiveJobCandidate":
+        if self.salary_min_minor is not None and self.salary_max_minor is not None:
+            if self.salary_min_minor > self.salary_max_minor:
+                raise ValueError("salary_min_minor must not exceed salary_max_minor")
+        if (self.salary_min_minor is not None or self.salary_max_minor is not None) and not self.salary_currency:
+            raise ValueError("salary_currency is required when salary is present")
+        return self
+
+
+class LiveJobsPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    jobs: list[LiveJobCandidate] = Field(max_length=30)
+
+
 class OpenAIJobsAdapter:
-    def __init__(self) -> None:
+    tracking_query_keys = {
+        "fbclid",
+        "gclid",
+        "mc_cid",
+        "mc_eid",
+        "ref_src",
+        "ref_url",
+    }
+
+    def __init__(self, settings: Settings | None = None) -> None:
         from app.services.runtime_configuration import runtime_model_configuration
 
-        self.api_key = os.getenv("OPENAI_API_KEY", "")
-        self.base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-        search_runtime = runtime_model_configuration("job_search", "openai", os.getenv("OPENAI_JOB_SEARCH_MODEL", "gpt-4.1-mini"))
-        embedding_runtime = runtime_model_configuration("job_embedding", "openai", os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small"))
+        self.settings = settings or get_settings()
+        self.api_key = self.settings.openai_api_key or ""
+        self.base_url = "https://api.openai.com/v1"
+        search_runtime = runtime_model_configuration("job_search", "openai", self.settings.openai_search_model)
+        embedding_runtime = runtime_model_configuration("job_embedding", "openai", self.settings.openai_embedding_model)
         self.search_model = search_runtime["model"]
         self.search_configuration = search_runtime["configuration"]
         self.search_runtime = search_runtime
         self.embedding_model = embedding_runtime["model"]
-        self.timeout = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "120"))
+        self.timeout = float(self.settings.openai_timeout_seconds)
 
     def live_search(self, query: str, filters: dict[str, Any], maximum_results: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         schema = {
@@ -67,38 +130,62 @@ class OpenAIJobsAdapter:
         )
         if self.search_configuration.get("instruction_prefix"):
             prompt = str(self.search_configuration["instruction_prefix"]) + "\n" + prompt
+        web_search_tool: dict[str, Any] = {
+            "type": "web_search",
+            "search_context_size": "medium",
+            "external_web_access": self.settings.job_search_live_external_access,
+            "user_location": {
+                "type": "approximate",
+                "country": self.settings.job_search_country_code.upper(),
+            },
+        }
+        if self.settings.job_search_allowed_domains or self.settings.job_search_blocked_domains:
+            web_search_tool["filters"] = {
+                "allowed_domains": self.settings.job_search_allowed_domains,
+                "blocked_domains": self.settings.job_search_blocked_domains,
+            }
         raw = self._responses(
             {
                 "model": self.search_model,
                 "store": False,
                 "input": prompt,
-                "tools": [
-                    {
-                        "type": "web_search",
-                        "search_context_size": "medium",
-                        "user_location": {"type": "approximate", "country": "VN"},
-                    }
-                ],
+                "tools": [web_search_tool],
                 "tool_choice": "required",
+                "include": ["web_search_call.action.sources"],
                 "text": {"format": {"type": "json_schema", "name": "live_jobs", "strict": True, "schema": schema}},
             }
         )
         output_text, citations = self._text_and_citations(raw)
         try:
-            jobs = json.loads(output_text).get("jobs", [])
-        except (json.JSONDecodeError, AttributeError) as exc:
+            jobs = LiveJobsPayload.model_validate_json(output_text).jobs
+        except ValidationError as exc:
             raise AppError(502, "WEB_SEARCH_RESPONSE_INVALID", "Web search returned invalid job data", retryable=True) from exc
-        cited = {self._normalize_url(item["url"]): item for item in citations if item.get("url")}
+        search_calls, sources = self._search_evidence(raw)
+        evidence = self._sanitize_links([*citations, *sources])
+        cited = {self._normalize_url(item["url"]): item for item in evidence if item.get("url")}
         accepted = []
         for job in jobs:
-            normalized = self._normalize_url(str(job.get("source_url") or ""))
+            item = job.model_dump(mode="json")
+            normalized = self._normalize_url(str(item.get("source_url") or ""))
             citation = cited.get(normalized)
             if citation is None:
                 continue
-            job["source_url"] = citation["url"]
-            job["citation_title"] = citation.get("title")
-            accepted.append(job)
-        return accepted, {**self._metadata(raw, "job-search-v1"), "citations": citations}
+            item["source_url"] = citation["url"]
+            item["citation_title"] = citation.get("title")
+            accepted.append(item)
+        if jobs and not accepted:
+            raise AppError(
+                502,
+                "WEB_SEARCH_PROVENANCE_MISSING",
+                "Web search jobs were not backed by provider source evidence",
+                retryable=True,
+            )
+        return accepted, {
+            **self._metadata(raw, "job-search-v1"),
+            "citations": self._sanitize_links(citations),
+            "sources": self._sanitize_links(sources),
+            "search_calls": search_calls,
+        }
 
     def embed(self, texts: list[str]) -> list[list[float]]:
         if not texts:
@@ -212,6 +299,58 @@ class OpenAIJobsAdapter:
                     return str(part.get("text") or ""), citations
         raise AppError(502, "OPENAI_RESPONSE_INVALID", "OpenAI returned no output text", retryable=True)
 
+    @staticmethod
+    def _search_evidence(raw: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        calls: list[dict[str, Any]] = []
+        sources: list[dict[str, Any]] = []
+        for item in raw.get("output", []):
+            if item.get("type") != "web_search_call":
+                continue
+            if item.get("status") != "completed":
+                raise AppError(502, "WEB_SEARCH_CALL_INCOMPLETE", "OpenAI web search call was incomplete", retryable=True)
+            action = item.get("action") or {}
+            calls.append(
+                {
+                    "id": str(item.get("id") or "")[:255],
+                    "type": str(action.get("type") or "search")[:40],
+                    "queries": [str(value)[:500] for value in (action.get("queries") or [])[:20]],
+                }
+            )
+            sources.extend(action.get("sources") or item.get("sources") or [])
+        if not calls:
+            raise AppError(502, "WEB_SEARCH_NOT_EXECUTED", "OpenAI did not execute web search", retryable=True)
+        return calls, sources
+
+    @staticmethod
+    def _sanitize_links(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        output: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for item in items[:200]:
+            url = str(item.get("url") or "")[:2048]
+            parsed = urlsplit(url)
+            if (
+                parsed.scheme not in {"http", "https"}
+                or not parsed.hostname
+                or parsed.username
+                or parsed.password
+            ):
+                continue
+            try:
+                normalized = OpenAIJobsAdapter._normalize_url(url)
+            except ValueError:
+                continue
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            output.append(
+                {
+                    "url": url,
+                    "title": str(item.get("title") or "")[:500] or None,
+                    "type": str(item.get("type") or "web_source")[:80],
+                }
+            )
+        return output
+
     def _require_key(self) -> None:
         if not self.api_key:
             raise AppError(503, "OPENAI_NOT_CONFIGURED", "OpenAI API key is not configured")
@@ -222,4 +361,20 @@ class OpenAIJobsAdapter:
     @staticmethod
     def _normalize_url(url: str) -> str:
         parts = urlsplit(url)
-        return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), parts.path.rstrip("/"), parts.query, ""))
+        if parts.scheme.lower() not in {"http", "https"} or not parts.hostname:
+            return ""
+        hostname = (parts.hostname or "").casefold().rstrip(".")
+        port = parts.port
+        netloc = hostname
+        if port and not ((parts.scheme.lower() == "https" and port == 443) or (parts.scheme.lower() == "http" and port == 80)):
+            netloc += ":" + str(port)
+        query = urlencode(
+            sorted(
+                (key, value)
+                for key, value in parse_qsl(parts.query, keep_blank_values=True)
+                if not key.casefold().startswith("utm_")
+                and key.casefold() not in OpenAIJobsAdapter.tracking_query_keys
+            ),
+            doseq=True,
+        )
+        return urlunsplit((parts.scheme.lower(), netloc, parts.path.rstrip("/") or "/", query, ""))

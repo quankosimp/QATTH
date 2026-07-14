@@ -7,6 +7,7 @@ Tất cả thay đổi đáng chú ý của QATTH được ghi lại trong file 
 ## [Unreleased]
 
 ### Added
+- Live job discovery hardening với full OpenAI source provenance, local schema validation, domain policy và active-page verification.
 - Gemini Live realtime hardening với distributed session lease, reconnect/resumption, context compression, duration/idle limits và usage lineage.
 - Backend Product v1 cho identity/profile/consent, file/CV lifecycle, interview, job discovery, recommendation, billing, privacy, administration và operations.
 - Migration chain cho các domain Product v1 và các hardening revision về identity, interview, job search, billing dual-control và provider usage.

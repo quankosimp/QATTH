@@ -21,7 +21,7 @@ Ma trận này nối requirement với API contract, logical entity và automate
 | FR-INT-001..002, FR-INT-004..008 | interview/session token/events/report/retry/feedback; interview tables/model_runs | <code>test_product_interview_contract.py</code> | Implemented |
 | FR-INT-003 | realtime WebSocket and Gemini Live adapter boundary | <code>test_product_interview_contract.py</code> and <code>test_gemini_interview_gateway.py</code> cover lifecycle, protocol, resumption and capacity; not real audio | Partial: staging voice, reconnect and backpressure acceptance required |
 | FR-JOB-001, FR-JOB-003..005, FR-JOB-010..012 | sources/postings/snapshots/interactions/applications/moderation | <code>test_product_job_search_contract.py</code>, <code>test_job_search.py</code> | Implemented |
-| FR-JOB-002 | live search run/provider usage/provenance | <code>test_product_job_search_contract.py</code> with provider fixture | Partial until allowed Internet sources and provider are verified in staging |
+| FR-JOB-002 | live search run, OpenAI search-call/citation/full-source provenance and terminal failure | <code>test_product_job_search_contract.py</code> and <code>test_live_job_discovery.py</code> with provider fixtures | Partial until reviewed Internet sources and provider credentials are verified in staging |
 | FR-JOB-006..009 | FTS/pgvector search, hard filters, rerank, explanations, run status/SSE | <code>test_product_job_search_contract.py</code>, <code>test_job_search.py</code> | Implemented; relevance/performance evidence tracked by NFR |
 | FR-REC-001..004 | candidate profile, recommendation run/items/feedback | <code>test_product_recommendations_contract.py</code> | Implemented |
 | FR-BILL-001, FR-BILL-004..011 | catalog, account/buckets/ledger/reservation/refund/review/approval | <code>test_product_billing_contract.py</code> | Implemented |
@@ -47,7 +47,7 @@ Ma trận này nối requirement với API contract, logical entity và automate
 | NFR-PRIV-005 | retention workflow | Partial: scheduler and backup expiration evidence required |
 | NFR-OBS-001..003, NFR-OBS-006 | correlation, Prometheus/provider metrics, structured events and audit | Implemented in backend; contract/resilience/admin tests |
 | NFR-OBS-004..005 | trace/alert platform handoff | Partial/evidence pending: collector, dashboard, alert and runbook links |
-| NFR-AI-001, NFR-AI-004..005, NFR-AI-007 | schema validation, provenance/citation, top-K explanation, usage/cost budget and human CV control | Implemented; CV/job/provider tests |
+| NFR-AI-001, NFR-AI-004..005, NFR-AI-007 | local schema validation, full source provenance/citation, active-page verification, top-K explanation, usage/cost budget and human CV control | Implemented; CV/job/provider tests including <code>test_live_job_discovery.py</code> |
 | NFR-AI-002..003, NFR-AI-006 | model/prompt lineage exists | Partial: versioned offline evaluation datasets, thresholds and staged rollout evidence required |
 | NFR-MNT-001..006 | adapters, OpenAPI sync, offline tests, startup config, this matrix and Docker image | Implemented; <code>test_openapi_contract_sync.py</code> guards API traceability |
 | NFR-UX-001..002 | bilingual payload preservation and UTC/currency schemas | Implemented at API/domain boundary |
