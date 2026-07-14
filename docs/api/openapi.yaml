@@ -8475,6 +8475,11 @@ components:
           maximum: 1.0
           minimum: 0.0
           title: Score
+        score_breakdown:
+          additionalProperties:
+            type: number
+          type: object
+          title: Score Breakdown
         reasons:
           items:
             type: string
@@ -8493,6 +8498,7 @@ components:
       - job
       - rank
       - score
+      - score_breakdown
       - reasons
       - gaps
       - explanation_status
@@ -8511,6 +8517,9 @@ components:
         query:
           type: string
           title: Query
+        ranking_version:
+          type: string
+          title: Ranking Version
         progress:
           additionalProperties:
             type: integer
@@ -8580,6 +8589,7 @@ components:
       - status
       - mode
       - query
+      - ranking_version
       - progress
       - degraded_reasons
       - provider

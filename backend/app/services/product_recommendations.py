@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import base64
 import hashlib
 from datetime import datetime, timedelta, timezone
@@ -593,6 +594,7 @@ class ProductRecommendationService:
         roles = self._normalize(profile.get("target_roles", []))
         locations = self._normalize(profile.get("locations", []))
         remote_modes = self._normalize(profile.get("remote_modes", []))
+        interview_readiness, has_interview = ProductJobSearchService._interview_readiness(profile.get("interview_scores", []))
         if run.search_run_id:
             source_rows = list(
                 self.db.execute(
@@ -618,22 +620,50 @@ class ProductRecommendationService:
             role_score = 1.0 if any(role in job.title.casefold() for role in roles) else 0.0
             location_score = 1.0 if locations and any(value in (job.location_text or "").casefold() for value in locations) else 0.0
             remote_score = 1.0 if job.remote_mode.casefold() in remote_modes else 0.0
-            preference_score = max(role_score, location_score, remote_score)
+            configured_preferences = [score for values, score in ((roles, role_score), (locations, location_score), (remote_modes, remote_score)) if values]
+            preference_score = sum(configured_preferences) / len(configured_preferences) if configured_preferences else 0.0
             normalized_search = max(0.0, min(1.0, float(search_score or 0.0)))
-            final = max(0.0, min(1.0, 0.65 * skill_score + 0.2 * normalized_search + 0.15 * preference_score))
+            age_days = max(0.0, (_utcnow() - job.last_seen_at).total_seconds() / 86400)
+            freshness = math.exp(-age_days / 30)
+            interview_supported_fit = interview_readiness * max(skill_score, role_score)
+            ranking_inputs = [(skill_score, 0.45), (normalized_search, 0.20), (freshness, 0.15)]
+            if configured_preferences:
+                ranking_inputs.append((preference_score, 0.15))
+            if has_interview:
+                ranking_inputs.append((interview_supported_fit, 0.05))
+            final = max(0.0, min(1.0, sum(value * weight for value, weight in ranking_inputs) / sum(weight for _, weight in ranking_inputs)))
+            reasons = ["Matched skills: " + ", ".join(matched[:8])] if matched else []
+            if role_score:
+                reasons.append("Matches a target role preference")
+            if location_score:
+                reasons.append("Matches a location preference")
+            if remote_score:
+                reasons.append("Matches a work-mode preference")
+            reasons.append("Job freshness: " + format(freshness, ".2f"))
+            if has_interview:
+                reasons.append("Interview evidence support: " + format(interview_supported_fit, ".2f"))
             scored.append({
                 "job": job,
                 "score": final,
                 "breakdown": {
                     "skill_match": round(skill_score, 6),
                     "search_relevance": round(normalized_search, 6),
+                    "role_preference": round(role_score, 6),
+                    "location_preference": round(location_score, 6),
+                    "work_mode_preference": round(remote_score, 6),
                     "preference_match": round(preference_score, 6),
+                    "interview_readiness": round(interview_readiness, 6),
+                    "interview_supported_fit": round(interview_supported_fit, 6),
+                    "freshness": round(freshness, 6),
+                    "final": round(final, 6),
                 },
-                "reasons": (["Matched skills: " + ", ".join(matched[:8])] if matched else []) + (["Matches a job preference"] if preference_score else []),
-                "gaps": ["Skills to verify or develop: " + ", ".join(missing)] if missing else [],
+                "reasons": reasons,
+                "gaps": ["No explicit candidate evidence found for: " + ", ".join(missing)] if missing else [],
                 "evidence": {
                     "matched_candidate_skills": matched,
                     "unmatched_job_skills": missing,
+                    "preference_dimensions_configured": len(configured_preferences),
+                    "interview_evidence_available": has_interview,
                     "candidate_profile_version": run.candidate_profile_version,
                     "ranking_version": run.ranking_version,
                     "job_last_verified_at": job.verified_at.isoformat() if job.verified_at else None,

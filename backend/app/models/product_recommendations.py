@@ -112,7 +112,7 @@ class RecommendationRun(Base):
     candidate_profile_version = Column(Integer, nullable=False)
     status = Column(String(24), nullable=False, default="queued")
     maximum_results = Column(Integer, nullable=False, default=20)
-    ranking_version = Column(String(40), nullable=False, default="recommendation-v1")
+    ranking_version = Column(String(40), nullable=False, default="recommendation-v2")
     experiment_assignment = Column(JSON, nullable=False, default=dict)
     input_snapshot = Column(JSON, nullable=False)
     idempotency_key = Column(String(255), nullable=True)

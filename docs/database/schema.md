@@ -25,6 +25,7 @@ Không lưu PDF trong PostgreSQL trừ artifact rất nhỏ có lý do được 
 | Foundation đến <code>0006</code> | Core schema, background tasks, file assets, model runs, security/privacy và candidate discovery |
 | <code>0007</code>-<code>0014</code> | Identity/profile/consent, Product CV, interview, job search, recommendation, billing, privacy và admin/ops |
 | <code>0015</code>-<code>0019</code> | Identity/file/CV hardening, interview hardening, job search hardening, billing dual-control và provider usage observability |
+| <code>0020</code>-<code>0023</code> | Payment inbox/reconciliation, billable interview boundary, recommendation feedback và auditable ranking v2 |
 
 Migration trong <code>migrations/versions/</code> là lịch sử physical schema bất biến. Bảng/constraint trong tài liệu chưa có revision tương ứng phải được coi là gap và cần migration riêng; không dùng <code>create_all</code> để thay thế migration ở production.
 
@@ -252,7 +253,7 @@ Unique job snapshot/model version. Chọn HNSW hoặc IVFFlat sau benchmark; fil
 
 ### job_search_results
 
-<code>id</code>, run ID, job ID, rank, lexical/vector/freshness/source/rerank scores, final score, explanation model run ID nullable, explanation JSONB nullable, result snapshot JSONB, created_at.
+<code>id</code>, run ID, job ID, rank, lexical/vector/freshness/source/rerank scores, score breakdown JSONB, final score, explanation model run ID nullable, explanation JSONB nullable, result snapshot JSONB, created_at. Breakdown ranking v2 lưu retrieval fusion, CV skill, role/location/work-mode preference, interview-supported fit, freshness, source quality và final score để replay/debug offline.
 
 Unique <code>(run_id, job_id)</code> và <code>(run_id, rank)</code>. Score breakdown nội bộ có access policy.
 

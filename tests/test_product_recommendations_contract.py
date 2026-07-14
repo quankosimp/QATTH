@@ -30,3 +30,13 @@ def test_recommendation_mutations_require_consent_and_idempotency() -> None:
     assert api.count('alias="Idempotency-Key"') >= 4
     assert "require_consent" in service
     assert "IdempotencyService" in service
+
+
+def test_recommendation_ranking_keeps_required_candidate_and_job_signals() -> None:
+    service = (ROOT / "backend/app/services/product_recommendations.py").read_text()
+    assert '"role_preference"' in service
+    assert '"location_preference"' in service
+    assert '"work_mode_preference"' in service
+    assert '"interview_supported_fit"' in service
+    assert '"freshness"' in service
+    assert "No explicit candidate evidence found for:" in service

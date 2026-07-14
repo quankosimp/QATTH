@@ -88,6 +88,7 @@ class JobSearchRunView(BaseModel):
     status: str
     mode: str
     query: str
+    ranking_version: str
     progress: dict[str, int]
     degraded_reasons: list[str]
     provider: str | None
@@ -107,6 +108,7 @@ class JobMatchView(BaseModel):
     job: JobView
     rank: int
     score: float = Field(ge=0, le=1)
+    score_breakdown: dict[str, float]
     reasons: list[str]
     gaps: list[str]
     explanation_status: str

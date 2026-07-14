@@ -367,7 +367,7 @@ class ProductJobSearchService:
         has_more = len(records) > limit
         records = records[:limit]
         return JobMatchPage(
-            items=[JobMatchView(job=self.job_view(self.db.get(ProductJob, item.job_id)), rank=item.rank, score=item.final_score, reasons=item.reasons or [], gaps=item.gaps or [], explanation_status=item.explanation_status) for item in records],
+            items=[JobMatchView(job=self.job_view(self.db.get(ProductJob, item.job_id)), rank=item.rank, score=item.final_score, score_breakdown=item.score_breakdown or {}, reasons=item.reasons or [], gaps=item.gaps or [], explanation_status=item.explanation_status) for item in records],
             next_cursor=base64.urlsafe_b64encode(str(records[-1].rank).encode()).decode().rstrip("=") if has_more and records else None,
         )
 
@@ -377,6 +377,7 @@ class ProductJobSearchService:
             status=run.status,
             mode=run.mode,
             query=run.query_text,
+            ranking_version=run.ranking_version,
             progress=run.progress or {},
             degraded_reasons=run.degraded_reasons or [],
             provider=run.provider,
@@ -531,6 +532,47 @@ class ProductJobSearchService:
                 )
         return base
 
+    @classmethod
+    def _interview_readiness(cls, payload: Any) -> tuple[float, bool]:
+        values: list[float] = []
+
+        def collect(value: Any) -> None:
+            if isinstance(value, bool):
+                return
+            if isinstance(value, (int, float)) and value >= 0:
+                values.append(float(value))
+            elif isinstance(value, dict):
+                for nested in value.values():
+                    collect(nested)
+            elif isinstance(value, list):
+                for nested in value:
+                    collect(nested)
+
+        collect(payload)
+        if not values:
+            return 0.0, False
+        maximum = max(values)
+        scale = 1.0 if maximum <= 1 else 5.0 if maximum <= 5 else 10.0 if maximum <= 10 else 100.0
+        normalized = [max(0.0, min(1.0, value / scale)) for value in values]
+        return sum(normalized) / len(normalized), True
+
+    @staticmethod
+    def _preference_signals(job: ProductJob, profile: dict[str, Any]) -> tuple[dict[str, float], bool]:
+        roles = {str(value).casefold() for value in profile.get("target_roles", []) if value}
+        locations = {str(value).casefold() for value in profile.get("locations", []) if value}
+        remote_modes = {str(value).casefold() for value in profile.get("remote_modes", []) if value}
+        role_score = 1.0 if roles and any(role in job.title.casefold() for role in roles) else 0.0
+        location = (job.location_text or "").casefold()
+        location_score = 1.0 if locations and any(value in location for value in locations) else 0.0
+        remote_score = 1.0 if remote_modes and job.remote_mode.casefold() in remote_modes else 0.0
+        configured = [score for values, score in ((roles, role_score), (locations, location_score), (remote_modes, remote_score)) if values]
+        return {
+            "role_preference": role_score,
+            "location_preference": location_score,
+            "work_mode_preference": remote_score,
+            "preference_match": sum(configured) / len(configured) if configured else 0.0,
+        }, bool(configured)
+
     def _score(self, job: ProductJob, query: str, candidate: CandidateProfile | None, lexical: float, vector: float) -> dict[str, Any]:
         now = _utcnow()
         age_days = max(0.0, (now - job.last_seen_at).total_seconds() / 86400)
@@ -540,17 +582,51 @@ class ProductJobSearchService:
         query_tokens = set(re.findall(r"[a-z0-9+#.]+", query.lower()))
         job_tokens = set(re.findall(r"[a-z0-9+#.]+", (job.title + " " + " ".join(job.skills or [])).lower()))
         query_overlap = len(query_tokens & job_tokens) / max(len(query_tokens), 1)
-        candidate_skills = set((candidate.profile_json.get("skills") or [])) if candidate else set()
-        skill_overlap = len({value.lower() for value in (job.skills or [])} & {value.lower() for value in candidate_skills}) / max(len(job.skills or []), 1)
-        rerank = 0.6 * query_overlap + 0.4 * skill_overlap
+        profile = candidate.profile_json if candidate else {}
+        candidate_skills = {str(value).casefold() for value in profile.get("skills", []) if value}
+        job_skills = {str(value).casefold() for value in (job.skills or []) if value}
+        skill_overlap = len(job_skills & candidate_skills) / max(len(job_skills), 1)
+        preference, has_preference = self._preference_signals(job, profile)
+        interview_readiness, has_interview = self._interview_readiness(profile.get("interview_scores", []))
+        interview_supported_fit = interview_readiness * max(skill_overlap, preference["role_preference"])
+        rerank_inputs = [(query_overlap, 0.35)]
+        if job_skills and candidate_skills:
+            rerank_inputs.append((skill_overlap, 0.35))
+        if has_preference:
+            rerank_inputs.append((preference["preference_match"], 0.20))
+        if has_interview:
+            rerank_inputs.append((interview_supported_fit, 0.10))
+        rerank = sum(value * weight for value, weight in rerank_inputs) / sum(weight for _, weight in rerank_inputs)
         rrf_scaled = min(1.0, 30 * (lexical + vector))
         final = max(0.0, min(1.0, 0.35 * rrf_scaled + 0.30 * rerank + 0.20 * freshness + 0.15 * source_score))
-        reasons = ["Role/query alignment: " + format(query_overlap, ".2f"), "Freshness: " + format(freshness, ".2f")]
+        breakdown = {
+            "retrieval_fusion": round(rrf_scaled, 6),
+            "query_alignment": round(query_overlap, 6),
+            "cv_skill_match": round(skill_overlap, 6),
+            **{key: round(value, 6) for key, value in preference.items()},
+            "interview_readiness": round(interview_readiness, 6),
+            "interview_supported_fit": round(interview_supported_fit, 6),
+            "freshness": round(freshness, 6),
+            "source_quality": round(source_score, 6),
+            "rerank": round(rerank, 6),
+            "final": round(final, 6),
+        }
+        reasons = ["Role/query alignment: " + format(query_overlap, ".2f"), "Job freshness: " + format(freshness, ".2f")]
+        if skill_overlap:
+            reasons.append("CV skill evidence match: " + format(skill_overlap, ".2f"))
+        if preference["role_preference"]:
+            reasons.append("Matches a target role preference")
+        if preference["location_preference"]:
+            reasons.append("Matches a location preference")
+        if preference["work_mode_preference"]:
+            reasons.append("Matches a work-mode preference")
+        if has_interview:
+            reasons.append("Interview evidence support: " + format(interview_supported_fit, ".2f"))
         gaps = []
         if candidate:
-            missing = [skill for skill in (job.skills or []) if skill.lower() not in {value.lower() for value in candidate_skills}]
-            gaps = ["Missing explicit CV evidence: " + skill for skill in missing[:5]]
-        return {"job": job, "lexical": lexical, "vector": vector, "freshness": freshness, "source": source_score, "rerank": rerank, "final": final, "reasons": reasons, "gaps": gaps}
+            missing = [skill for skill in (job.skills or []) if skill.casefold() not in candidate_skills]
+            gaps = ["No explicit CV evidence found for: " + skill for skill in missing[:5]]
+        return {"job": job, "lexical": lexical, "vector": vector, "freshness": freshness, "source": source_score, "rerank": rerank, "breakdown": breakdown, "final": final, "reasons": reasons, "gaps": gaps}
 
     def _verify_and_upsert(self, item: dict[str, Any], provider: dict[str, Any]) -> ProductJob:
         self._assert_source_domain_allowed(item["source_url"])
@@ -697,7 +773,7 @@ class ProductJobSearchService:
             return None
         product_profile = self.db.scalar(select(UserProductProfile).where(UserProductProfile.user_id == run.user_id))
         preference_version = product_profile.preference_version if product_profile else 1
-        existing = self.db.scalar(select(CandidateProfile).where(CandidateProfile.user_id == run.user_id, CandidateProfile.cv_version_id == version.id, CandidateProfile.preference_version == preference_version, CandidateProfile.status == "fresh").order_by(CandidateProfile.version.desc()))
+        existing = self.db.scalar(select(CandidateProfile).where(CandidateProfile.user_id == run.user_id, CandidateProfile.cv_version_id == version.id, CandidateProfile.preference_version == preference_version, CandidateProfile.generation_version == "candidate-v2", CandidateProfile.status == "fresh").order_by(CandidateProfile.version.desc()))
         if existing:
             run.candidate_profile_id = existing.id
             self.db.commit()
@@ -706,14 +782,15 @@ class ProductJobSearchService:
         content = version.content or {}
         skills = [item.get("name") for item in content.get("skills", []) if item.get("name")]
         basics = content.get("basics", {})
-        profile_json = {"skills": skills, "summary": basics.get("summary"), "target_roles": (product_profile.job_preferences or {}).get("roles", []) if product_profile else [], "interview_scores": [report.scores for report in reports]}
+        preferences = product_profile.job_preferences or {} if product_profile else {}
+        profile_json = {"skills": skills, "summary": basics.get("summary"), "target_roles": preferences.get("roles", []), "locations": preferences.get("locations", []), "remote_modes": preferences.get("remote_modes", []), "interview_scores": [report.scores for report in reports]}
         text = " ".join([basics.get("summary") or "", " ".join(skills), " ".join(profile_json["target_roles"])])
         try:
             embedding = OpenAIJobsAdapter().embed([text])[0]
         except AppError:
             embedding = None
         next_version = (self.db.scalar(select(func.max(CandidateProfile.version)).where(CandidateProfile.user_id == run.user_id)) or 0) + 1
-        candidate = CandidateProfile(user_id=run.user_id, version=next_version, cv_version_id=version.id, preference_version=preference_version, preference_snapshot=product_profile.job_preferences if product_profile else {}, interview_report_ids=[report.id for report in reports], profile_json=profile_json, embedding=embedding, embedding_model=OpenAIJobsAdapter().embedding_model if embedding else None, generation_version="candidate-v1", status="fresh")
+        candidate = CandidateProfile(user_id=run.user_id, version=next_version, cv_version_id=version.id, preference_version=preference_version, preference_snapshot=preferences, interview_report_ids=[report.id for report in reports], profile_json=profile_json, embedding=embedding, embedding_model=OpenAIJobsAdapter().embedding_model if embedding else None, generation_version="candidate-v2", status="fresh")
         self.db.add(candidate)
         self.db.flush()
         run.candidate_profile_id = candidate.id
@@ -725,7 +802,7 @@ class ProductJobSearchService:
         for index, row in enumerate(ranked, 1):
             job = row["job"]
             snapshot = self.db.scalar(select(JobSnapshot).where(JobSnapshot.job_id == job.id).order_by(JobSnapshot.captured_at.desc()))
-            result = JobSearchResult(run_id=run.id, job_id=job.id, job_snapshot_id=snapshot.id if snapshot else None, rank=index, lexical_score=row["lexical"], vector_score=row["vector"], freshness_score=row["freshness"], source_score=row["source"], rerank_score=row["rerank"], final_score=row["final"], reasons=row["reasons"], gaps=row["gaps"], explanation_status="processing" if index <= 3 else "not_requested", result_snapshot=self.job_view(job).model_dump(mode="json"))
+            result = JobSearchResult(run_id=run.id, job_id=job.id, job_snapshot_id=snapshot.id if snapshot else None, rank=index, lexical_score=row["lexical"], vector_score=row["vector"], freshness_score=row["freshness"], source_score=row["source"], rerank_score=row["rerank"], score_breakdown=row["breakdown"], final_score=row["final"], reasons=row["reasons"], gaps=row["gaps"], explanation_status="processing" if index <= 3 else "not_requested", result_snapshot=self.job_view(job).model_dump(mode="json"))
             self.db.add(result)
             self.db.flush()
             if index <= 3:
