@@ -15,3 +15,12 @@ from backend.app.models.identity import (
     UserProductProfile,
     UserSession,
 )
+
+from backend.app.models.product_cv import (
+    CvAnalysis,
+    CvDraft,
+    CvScan,
+    ProductCV,
+    ProductCvVersion,
+    ProductFileAsset,
+)
