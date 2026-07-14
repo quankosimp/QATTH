@@ -60,6 +60,13 @@ class Settings(BaseSettings):
     openai_search_model: str = "gpt-5.6-luna"
     openai_timeout_seconds: int = 60
     openai_daily_budget_minor: int = 500_000
+    provider_retry_attempts: int = 3
+    provider_retry_base_delay_seconds: float = 0.25
+    provider_retry_max_delay_seconds: float = 4.0
+    provider_circuit_failure_threshold: int = 5
+    provider_circuit_open_seconds: int = 30
+    provider_bulkhead_limit: int = 20
+    provider_bulkhead_lease_seconds: int = 180
 
     gemini_api_key: str | None = None
     gemini_cv_model: str = "gemini-3.5-flash"
@@ -105,6 +112,10 @@ class Settings(BaseSettings):
             raise ValueError("PRODUCT_PROCESSING_POLICY_VERSION must not be empty.")
         if self.credit_adjustment_dual_control_threshold < 1:
             raise ValueError("CREDIT_ADJUSTMENT_DUAL_CONTROL_THRESHOLD must be positive.")
+        if self.provider_retry_attempts < 1:
+            raise ValueError("PROVIDER_RETRY_ATTEMPTS must be positive.")
+        if self.provider_circuit_failure_threshold < 1 or self.provider_bulkhead_limit < 1:
+            raise ValueError("Provider circuit and bulkhead limits must be positive.")
 
         if self.app_env != "production":
             return self

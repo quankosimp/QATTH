@@ -9,6 +9,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.errors import AppError
+from app.core.provider_resilience import get_provider_executor
 from app.schemas.product_interview import EvidenceFinding
 
 
@@ -73,6 +74,30 @@ class OpenAIInterviewEvaluator:
                 }
             },
         }
+        execution = get_provider_executor().execute(
+            "openai",
+            "interview_evaluation",
+            lambda: self._evaluate_once(body),
+        )
+        output, raw = execution.value
+        usage = raw.get("usage", {})
+        return output, {
+            "provider_run_id": raw.get("id"),
+            "usage": usage,
+            "model": self.model,
+            "model_configuration_id": self.runtime.get("id"),
+            "prompt_version": str(
+                self.runtime["configuration"].get("prompt_version")
+                or self.runtime.get("version")
+                or "interview-evaluation-v1"
+            ),
+            "estimated_cost_minor": self._estimate_cost(usage),
+            "correlation_id": execution.correlation_id,
+            "attempts": execution.attempts,
+            "latency_ms": execution.latency_ms,
+        }
+
+    def _evaluate_once(self, body: dict[str, Any]) -> tuple[InterviewEvaluationOutput, dict[str, Any]]:
         try:
             response = httpx.post(
                 self.base_url + "/responses",
@@ -98,19 +123,7 @@ class OpenAIInterviewEvaluator:
             output = InterviewEvaluationOutput.model_validate_json(text)
         except ValueError as exc:
             raise AppError(502, "AI_RESPONSE_INVALID", "Interview evaluator returned invalid output", retryable=True) from exc
-        usage = raw.get("usage", {})
-        return output, {
-            "provider_run_id": raw.get("id"),
-            "usage": usage,
-            "model": self.model,
-            "model_configuration_id": self.runtime.get("id"),
-            "prompt_version": str(
-                self.runtime["configuration"].get("prompt_version")
-                or self.runtime.get("version")
-                or "interview-evaluation-v1"
-            ),
-            "estimated_cost_minor": self._estimate_cost(usage),
-        }
+        return output, raw
 
     def _estimate_cost(self, usage: dict[str, Any]) -> int | None:
         input_rate = self.runtime["configuration"].get("input_cost_minor_per_million")

@@ -9,6 +9,7 @@ import httpx
 from pydantic import BaseModel
 
 from app.core.errors import AppError
+from app.core.provider_resilience import get_provider_executor
 from app.schemas.product_cv import CvContent
 
 
@@ -63,24 +64,32 @@ class OpenAICvAdapter:
         configured_instruction = runtime["configuration"].get("instruction_prefix")
         if configured_instruction:
             instruction = str(configured_instruction) + "\n" + instruction
-        payload = self._request(
-            name="cv_extraction",
-            schema=_strict_schema(CvExtractionOutput),
-            content=[
-                {
-                    "type": "input_file",
-                    "filename": filename,
-                    "file_data": "data:application/pdf;base64," + base64.b64encode(content).decode("ascii"),
-                    "detail": "low",
-                },
-                {"type": "input_text", "text": instruction},
-            ],
-            model=runtime["model"],
+        execution = get_provider_executor().execute(
+            "openai",
+            "cv_extraction",
+            lambda: self._request(
+                name="cv_extraction",
+                schema=_strict_schema(CvExtractionOutput),
+                content=[
+                    {
+                        "type": "input_file",
+                        "filename": filename,
+                        "file_data": "data:application/pdf;base64," + base64.b64encode(content).decode("ascii"),
+                        "detail": "low",
+                    },
+                    {"type": "input_text", "text": instruction},
+                ],
+                model=runtime["model"],
+            ),
         )
+        payload = execution.value
         payload.update(
             model=runtime["model"],
             model_configuration_id=runtime.get("id"),
             prompt_version=str(runtime["configuration"].get("prompt_version") or runtime.get("version") or "cv-extraction-v1"),
+            correlation_id=execution.correlation_id,
+            attempts=execution.attempts,
+            latency_ms=execution.latency_ms,
         )
         return CvExtractionOutput.model_validate(payload["data"]), payload
 
@@ -97,9 +106,12 @@ class OpenAICvAdapter:
         configured_instruction = runtime["configuration"].get("instruction_prefix")
         if configured_instruction:
             instruction = str(configured_instruction) + "\n" + instruction
-        payload = self._request(
-            name="cv_analysis",
-            schema={
+        execution = get_provider_executor().execute(
+            "openai",
+            "cv_analysis",
+            lambda: self._request(
+                name="cv_analysis",
+                schema={
                 "type": "object",
                 "additionalProperties": False,
                 "required": ["scores", "findings"],
@@ -125,13 +137,18 @@ class OpenAICvAdapter:
                     },
                 },
             },
-            content=[{"type": "input_text", "text": instruction}],
-            model=runtime["model"],
+                content=[{"type": "input_text", "text": instruction}],
+                model=runtime["model"],
+            ),
         )
+        payload = execution.value
         payload.update(
             model=runtime["model"],
             model_configuration_id=runtime.get("id"),
             prompt_version=str(runtime["configuration"].get("prompt_version") or runtime.get("version") or "cv-analysis-v1"),
+            correlation_id=execution.correlation_id,
+            attempts=execution.attempts,
+            latency_ms=execution.latency_ms,
         )
         return CvAnalysisOutput.model_validate(payload["data"]), payload
 

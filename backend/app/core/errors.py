@@ -13,7 +13,6 @@ logger = structlog.get_logger(__name__)
 class AppError(Exception):
     def __init__(
         self,
-        *,
         status_code: int,
         code: str,
         message: str,

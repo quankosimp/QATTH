@@ -1,9 +1,10 @@
 from datetime import UTC, datetime
 import re
+from uuid import uuid4
 
 import structlog
 from celery import Celery, signals
-from structlog.contextvars import get_contextvars
+from structlog.contextvars import bind_contextvars, clear_contextvars, get_contextvars
 
 from app.core.config import get_settings
 
@@ -57,11 +58,13 @@ def register_operational_job(sender=None, body=None, headers=None, routing_key=N
 
         args = _safe_args(body)
         context = get_contextvars()
+        request_id = str(headers.get("request_id") or context.get("request_id") or uuid4())
+        headers["request_id"] = request_id
         with SessionLocal() as db:
             if db.get(OperationalJob, task_id) is not None:
                 return
             parent = db.get(OperationalJob, headers.get("retry_of")) if headers.get("retry_of") else None
-            db.add(OperationalJob(id=task_id, task_name=str(sender or headers.get("task") or "unknown"), queue=str(routing_key or "celery"), status="queued", attempt=(parent.attempt + 1) if parent else 0, max_attempts=parent.max_attempts if parent else 3, resource_type=str(sender or headers.get("task") or "task"), resource_id=args[0] if args else None, args_payload=args, request_id=str(headers.get("request_id") or context.get("request_id") or "") or None, parent_job_id=parent.id if parent else None))
+            db.add(OperationalJob(id=task_id, task_name=str(sender or headers.get("task") or "unknown"), queue=str(routing_key or "celery"), status="queued", attempt=(parent.attempt + 1) if parent else 0, max_attempts=parent.max_attempts if parent else 3, resource_type=str(sender or headers.get("task") or "task"), resource_id=args[0] if args else None, args_payload=args, request_id=request_id, parent_job_id=parent.id if parent else None))
             db.commit()
     except Exception as exc:
         logger.error("operational_job_publish_tracking_failed", task_id=task_id, error_type=type(exc).__name__)
@@ -69,6 +72,16 @@ def register_operational_job(sender=None, body=None, headers=None, routing_key=N
 
 @signals.task_prerun.connect
 def mark_operational_job_running(task_id=None, task=None, args=None, **kwargs):
+    clear_contextvars()
+    request_headers = getattr(getattr(task, "request", None), "headers", None) or {}
+    request_id = str(request_headers.get("request_id") or uuid4())
+    safe_args = [str(value) if _UUID_PATTERN.fullmatch(str(value)) else "<redacted>" for value in (args or []) if isinstance(value, (str, int))][:8]
+    bind_contextvars(
+        request_id=request_id,
+        task_id=str(task_id),
+        task_name=getattr(task, "name", "unknown"),
+        resource_id=safe_args[0] if safe_args else None,
+    )
     try:
         from app.core.db import SessionLocal
         from app.models.product_admin_ops import OperationalJob
@@ -76,7 +89,6 @@ def mark_operational_job_running(task_id=None, task=None, args=None, **kwargs):
         with SessionLocal() as db:
             job = db.get(OperationalJob, str(task_id))
             if job is None:
-                safe_args = [str(value) if _UUID_PATTERN.fullmatch(str(value)) else "<redacted>" for value in (args or []) if isinstance(value, (str, int))][:8]
                 job = OperationalJob(id=str(task_id), task_name=task.name, status="running", resource_type=task.name, resource_id=safe_args[0] if safe_args else None, args_payload=safe_args)
                 db.add(job)
             job.status = "running"
@@ -106,6 +118,8 @@ def mark_operational_job_finished(task_id=None, retval=None, state=None, **kwarg
             db.commit()
     except Exception as exc:
         logger.error("operational_job_finish_tracking_failed", task_id=str(task_id), error_type=type(exc).__name__)
+    finally:
+        clear_contextvars()
 
 
 @signals.task_failure.connect

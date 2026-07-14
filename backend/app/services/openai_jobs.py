@@ -9,6 +9,7 @@ from urllib.parse import urlsplit, urlunsplit
 import httpx
 
 from app.core.errors import AppError
+from app.core.provider_resilience import get_provider_executor
 
 
 class OpenAIJobsAdapter:
@@ -103,18 +104,21 @@ class OpenAIJobsAdapter:
         if not texts:
             return []
         self._require_key()
-        try:
-            response = httpx.post(
-                self.base_url + "/embeddings",
-                headers=self._headers(),
-                json={"model": self.embedding_model, "input": texts, "dimensions": 1536},
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
-            rows = sorted(response.json().get("data", []), key=lambda item: item["index"])
-            return [row["embedding"] for row in rows]
-        except (httpx.HTTPError, ValueError, KeyError) as exc:
-            raise AppError(502, "EMBEDDING_PROVIDER_ERROR", "Embedding request failed", retryable=True) from exc
+        def invoke() -> list[list[float]]:
+            try:
+                response = httpx.post(
+                    self.base_url + "/embeddings",
+                    headers=self._headers(),
+                    json={"model": self.embedding_model, "input": texts, "dimensions": 1536},
+                    timeout=self.timeout,
+                )
+                response.raise_for_status()
+                rows = sorted(response.json().get("data", []), key=lambda item: item["index"])
+                return [row["embedding"] for row in rows]
+            except (httpx.HTTPError, ValueError, KeyError) as exc:
+                raise AppError(502, "EMBEDDING_PROVIDER_ERROR", "Embedding request failed", retryable=True) from exc
+
+        return get_provider_executor().execute("openai", "job_embedding", invoke).value
 
     def explain(self, candidate: dict[str, Any], job: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         schema = {
@@ -146,6 +150,7 @@ class OpenAIJobsAdapter:
 
     def _metadata(self, raw: dict[str, Any], fallback_prompt_version: str) -> dict[str, Any]:
         usage = raw.get("usage", {})
+        execution = raw.get("_qatth_execution", {})
         return {
             "provider_run_id": raw.get("id"),
             "model": self.search_model,
@@ -157,6 +162,9 @@ class OpenAIJobsAdapter:
             ),
             "usage": usage,
             "estimated_cost_minor": self._estimate_cost(usage),
+            "correlation_id": execution.get("correlation_id"),
+            "attempts": execution.get("attempts", 1),
+            "latency_ms": execution.get("latency_ms"),
         }
 
     def _estimate_cost(self, usage: dict[str, Any]) -> int | None:
@@ -170,17 +178,27 @@ class OpenAIJobsAdapter:
 
     def _responses(self, body: dict[str, Any]) -> dict[str, Any]:
         self._require_key()
-        try:
-            response = httpx.post(self.base_url + "/responses", headers=self._headers(), json=body, timeout=self.timeout)
-            response.raise_for_status()
-            raw = response.json()
-        except httpx.TimeoutException as exc:
-            raise AppError(504, "OPENAI_TIMEOUT", "OpenAI request timed out", retryable=True) from exc
-        except (httpx.HTTPError, ValueError) as exc:
-            status_code = getattr(getattr(exc, "response", None), "status_code", None)
-            raise AppError(502, "OPENAI_REQUEST_FAILED", "OpenAI request failed", details={"provider_status": status_code}, retryable=status_code is None or status_code == 429 or status_code >= 500) from exc
-        if raw.get("status") != "completed":
-            raise AppError(502, "OPENAI_RESPONSE_INCOMPLETE", "OpenAI response was incomplete", retryable=True)
+        def invoke() -> dict[str, Any]:
+            try:
+                response = httpx.post(self.base_url + "/responses", headers=self._headers(), json=body, timeout=self.timeout)
+                response.raise_for_status()
+                raw = response.json()
+            except httpx.TimeoutException as exc:
+                raise AppError(504, "OPENAI_TIMEOUT", "OpenAI request timed out", retryable=True) from exc
+            except (httpx.HTTPError, ValueError) as exc:
+                status_code = getattr(getattr(exc, "response", None), "status_code", None)
+                raise AppError(502, "OPENAI_REQUEST_FAILED", "OpenAI request failed", details={"provider_status": status_code}, retryable=status_code is None or status_code == 429 or status_code >= 500) from exc
+            if raw.get("status") != "completed":
+                raise AppError(502, "OPENAI_RESPONSE_INCOMPLETE", "OpenAI response was incomplete", retryable=True)
+            return raw
+
+        result = get_provider_executor().execute("openai", "job_search", invoke)
+        raw = result.value
+        raw["_qatth_execution"] = {
+            "correlation_id": result.correlation_id,
+            "attempts": result.attempts,
+            "latency_ms": result.latency_ms,
+        }
         return raw
 
     @staticmethod
