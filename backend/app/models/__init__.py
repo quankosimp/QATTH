@@ -32,3 +32,16 @@ from backend.app.models.product_interview import (
     ProductInterviewEvent,
     ProductInterviewReport,
 )
+
+from backend.app.models.product_jobs import (
+    CandidateProfile,
+    JobEmbedding,
+    JobSearchEvent,
+    JobSearchDispatch,
+    JobSearchResult,
+    JobSearchRun,
+    JobSnapshot,
+    JobSource,
+    JobSourceRecord,
+    ProductJob,
+)

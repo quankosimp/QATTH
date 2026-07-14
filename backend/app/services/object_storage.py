@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from datetime import timedelta
+from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -40,6 +41,20 @@ class ObjectStorage:
         path = self._local_path(object_key)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
+
+    def put_system(self, object_key: str, content: bytes, content_type: str) -> None:
+        if self.backend == "local":
+            path = self._local_path(object_key)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(content)
+            return
+        self._client().put_object(
+            self.bucket,
+            object_key,
+            BytesIO(content),
+            length=len(content),
+            content_type=content_type,
+        )
 
     def stat(self, object_key: str) -> ObjectStat:
         if self.backend == "local":

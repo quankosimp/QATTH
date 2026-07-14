@@ -1,0 +1,129 @@
+from __future__ import annotations
+
+import http.client
+import ipaddress
+import socket
+import ssl
+from dataclasses import dataclass
+from urllib.parse import urljoin, urlsplit
+
+from bs4 import BeautifulSoup
+
+from backend.app.core.errors import AppError
+
+
+MAX_RESPONSE_BYTES = 1024 * 1024
+
+
+@dataclass(frozen=True)
+class VerifiedPage:
+    final_url: str
+    http_status: int
+    outcome: str
+    title: str | None
+    description: str | None
+    content_hash_input: str
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, origin_host: str, pinned_ip: str, port: int, timeout: float) -> None:
+        super().__init__(origin_host, port=port, timeout=timeout)
+        self._pinned_ip = pinned_ip
+
+    def connect(self) -> None:
+        self.sock = socket.create_connection((self._pinned_ip, self.port), self.timeout)
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    def __init__(self, origin_host: str, pinned_ip: str, port: int, timeout: float) -> None:
+        super().__init__(origin_host, port=port, timeout=timeout, context=ssl.create_default_context())
+        self._pinned_ip = pinned_ip
+
+    def connect(self) -> None:
+        raw_socket = socket.create_connection((self._pinned_ip, self.port), self.timeout)
+        self.sock = self._context.wrap_socket(raw_socket, server_hostname=self.host)
+
+
+class SafeJobFetcher:
+    def fetch(self, url: str) -> VerifiedPage:
+        current = url
+        for _ in range(4):
+            parsed, pinned_ip = self._resolve_public_url(current)
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+            connection_type = _PinnedHTTPSConnection if parsed.scheme == "https" else _PinnedHTTPConnection
+            connection = connection_type(parsed.hostname or "", pinned_ip, port, 12)
+            path = parsed.path or "/"
+            if parsed.query:
+                path += "?" + parsed.query
+            host_header = parsed.hostname or ""
+            if parsed.port and parsed.port not in {80, 443}:
+                host_header += ":" + str(parsed.port)
+            try:
+                connection.request(
+                    "GET",
+                    path,
+                    headers={
+                        "Host": host_header,
+                        "User-Agent": "QATTH-JobVerifier/1.0",
+                        "Accept": "text/html,application/xhtml+xml",
+                        "Accept-Encoding": "identity",
+                        "Connection": "close",
+                    },
+                )
+                response = connection.getresponse()
+                body = response.read(MAX_RESPONSE_BYTES + 1)
+            except (OSError, ssl.SSLError, http.client.HTTPException) as exc:
+                raise AppError(
+                    502,
+                    "JOB_SOURCE_FETCH_FAILED",
+                    "Job source could not be fetched",
+                    retryable=True,
+                ) from exc
+            finally:
+                connection.close()
+            if len(body) > MAX_RESPONSE_BYTES:
+                raise AppError(422, "JOB_SOURCE_TOO_LARGE", "Job source response exceeds 1 MiB")
+            if response.status in {301, 302, 303, 307, 308}:
+                location = response.getheader("Location")
+                if not location:
+                    raise AppError(422, "JOB_SOURCE_REDIRECT_INVALID", "Job source redirect has no target")
+                current = urljoin(current, location)
+                continue
+            content_type = (response.getheader("Content-Type") or "").lower()
+            title = None
+            description = None
+            if "html" in content_type and body:
+                soup = BeautifulSoup(body, "html.parser")
+                for node in soup(["script", "style", "noscript", "iframe", "object", "embed"]):
+                    node.decompose()
+                title = soup.title.get_text(" ", strip=True)[:500] if soup.title else None
+                description = " ".join(soup.get_text(" ", strip=True).split())[:20000] or None
+            outcome = "verified" if response.status == 200 else "unavailable"
+            return VerifiedPage(
+                final_url=current,
+                http_status=response.status,
+                outcome=outcome,
+                title=title,
+                description=description,
+                content_hash_input=body.decode("utf-8", "replace"),
+            )
+        raise AppError(422, "JOB_SOURCE_REDIRECT_INVALID", "Job source has too many redirects")
+
+    @staticmethod
+    def _resolve_public_url(url: str):
+        parsed = urlsplit(url)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password:
+            raise AppError(422, "JOB_SOURCE_URL_INVALID", "Job source URL is invalid")
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        try:
+            resolved = socket.getaddrinfo(parsed.hostname, port, type=socket.SOCK_STREAM)
+        except socket.gaierror as exc:
+            raise AppError(422, "JOB_SOURCE_DNS_FAILED", "Job source hostname could not be resolved") from exc
+        addresses = sorted({item[4][0] for item in resolved})
+        if not addresses:
+            raise AppError(422, "JOB_SOURCE_DNS_FAILED", "Job source hostname has no address")
+        for address in addresses:
+            ip = ipaddress.ip_address(address)
+            if not ip.is_global or ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                raise AppError(422, "JOB_SOURCE_URL_BLOCKED", "Job source resolves to a non-public address")
+        return parsed, addresses[0]

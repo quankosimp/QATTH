@@ -208,3 +208,50 @@ def evaluate_product_interview_task(report_id: str) -> dict:
         raise
     finally:
         db.close()
+
+
+@celery_app.task(name="product.jobs.search", acks_late=True)
+def execute_product_job_search_task(run_id: str) -> dict:
+    from app.models.product_jobs import JobSearchRun
+    from app.services.product_job_search import ProductJobSearchService
+
+    db = SessionLocal()
+    try:
+        ProductJobSearchService(db).execute(run_id)
+        run = db.get(JobSearchRun, run_id)
+        return {"status": run.status if run else "missing", "run_id": run_id}
+    except Exception as exc:
+        db.rollback()
+        run = db.get(JobSearchRun, run_id)
+        if run is not None:
+            run.status = "failed"
+            run.error = {"code": "JOB_SEARCH_FAILED", "message": str(exc)[:1000]}
+            run.completed_at = datetime.now(UTC)
+            db.commit()
+            ProductJobSearchService(db).emit(run_id, "run.failed", run.error)
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="product.jobs.mark_stale")
+def mark_stale_product_jobs_task() -> dict:
+    from app.services.product_job_search import ProductJobSearchService
+
+    db = SessionLocal()
+    try:
+        return {"status": "completed", "jobs_marked_stale": ProductJobSearchService(db).mark_stale_jobs()}
+    finally:
+        db.close()
+
+
+@celery_app.task(name="product.jobs.publish_dispatches")
+def publish_product_job_search_dispatches_task() -> dict:
+    from app.services.product_job_search import ProductJobSearchService
+
+    db = SessionLocal()
+    try:
+        published = ProductJobSearchService(db).publish_pending_dispatches()
+        return {"status": "completed", "dispatches_published": published}
+    finally:
+        db.close()
