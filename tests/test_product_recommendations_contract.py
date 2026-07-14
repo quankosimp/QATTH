@@ -22,3 +22,11 @@ def test_recommendations_persist_versioned_evidence() -> None:
     assert "evidence" in source
     assert "product_job_application_events" in source
     assert "product_job_moderation_cases" in source
+
+
+def test_recommendation_mutations_require_consent_and_idempotency() -> None:
+    api = (ROOT / "backend/app/api/v1/recommendations.py").read_text()
+    service = (ROOT / "backend/app/services/product_recommendations.py").read_text()
+    assert api.count('alias="Idempotency-Key"') >= 4
+    assert "require_consent" in service
+    assert "IdempotencyService" in service

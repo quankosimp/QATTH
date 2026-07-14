@@ -17,6 +17,7 @@ def test_product_file_and_cv_routes_are_exposed() -> None:
         "/v1/cvs/{cv_id}/active-version": {"put"},
         "/v1/cvs/{cv_id}/archive": {"post"},
         "/v1/cv-versions/{version_id}/analyses": {"post"},
+        "/v1/cv-versions/{version_id}/drafts": {"post"},
         "/v1/cv-analyses/{analysis_id}": {"get"},
         "/v1/cv-analyses/{analysis_id}/retry": {"post"},
     }

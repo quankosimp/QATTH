@@ -159,6 +159,68 @@ class ProductCvService:
             raise AppError(404, "CV_DRAFT_NOT_FOUND", "CV draft was not found")
         return draft
 
+    def create_version_draft(
+        self,
+        current: ProductCurrentUser,
+        version_id: str,
+        idempotency_key: str,
+    ) -> CvDraft:
+        idempotency = IdempotencyService(self.db)
+        result = idempotency.begin(
+            scope="user:" + current.id,
+            operation="cv.create_version_draft:" + version_id,
+            key=idempotency_key,
+            request_hash=idempotency.request_hash({"version_id": version_id}),
+        )
+        if result.replayed:
+            scan = self._replayed_resource(current, result, CvScan, "CV_SCAN_NOT_FOUND")
+            return self.get_draft(current, scan.id)
+        IdentityService(self.db).require_consent(current.id)
+        version = self.db.scalar(
+            select(ProductCvVersion)
+            .join(ProductCV, ProductCV.id == ProductCvVersion.cv_id)
+            .where(
+                ProductCvVersion.id == version_id,
+                ProductCvVersion.user_id == current.id,
+                ProductCV.status == "active",
+            )
+        )
+        if version is None:
+            raise AppError(404, "CV_VERSION_NOT_FOUND", "Active CV version was not found")
+        attempt = (self.db.scalar(select(func.max(CvScan.attempt_number)).where(
+            CvScan.file_id == version.source_file_id,
+            CvScan.schema_version == version.schema_version,
+        )) or 0) + 1
+        now = _utcnow()
+        scan = CvScan(
+            user_id=current.id,
+            file_id=version.source_file_id,
+            cv_id=version.cv_id,
+            parent_scan_id=version.source_scan_id,
+            attempt_number=attempt,
+            status="draft_ready",
+            schema_version=version.schema_version,
+            provider="user_edit",
+            started_at=now,
+            completed_at=now,
+        )
+        self.db.add(scan)
+        self.db.flush()
+        draft = CvDraft(
+            scan_id=scan.id,
+            revision=1,
+            schema_version=version.schema_version,
+            content=version.content,
+            field_confidence={},
+            warnings=["Draft created from immutable CV version " + version.id],
+            checksum=version.checksum,
+        )
+        self.db.add(draft)
+        idempotency.complete(result.record, resource_type="cv_scan", resource_id=scan.id, response_status=201)
+        self.db.commit()
+        self.db.refresh(draft)
+        return draft
+
     def update_draft(self, current: ProductCurrentUser, scan_id: str, revision: int, payload: CvDraftPatch) -> CvDraft:
         scan = self.get_scan(current, scan_id)
         if scan.status != "draft_ready":

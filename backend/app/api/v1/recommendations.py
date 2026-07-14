@@ -25,11 +25,12 @@ def upsert_job_interaction(
     job_id: str,
     payload: UpsertJobInteractionRequest,
     request: Request,
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
     current: ProductCurrentUser = Depends(get_product_user),
     db: Session = Depends(get_db),
 ):
     service = ProductRecommendationService(db)
-    return make_response(service.interaction_view(service.upsert_interaction(current, job_id, payload)), request=request)
+    return make_response(service.interaction_view(service.upsert_interaction(current, job_id, payload, idempotency_key)), request=request)
 
 
 @router.get("/job-applications", response_model=APIResponse[JobApplicationPage])
@@ -48,7 +49,7 @@ def list_job_applications(
 def create_job_application(
     payload: CreateJobApplicationRequest,
     request: Request,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=255),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
     current: ProductCurrentUser = Depends(get_product_user),
     db: Session = Depends(get_db),
 ):
@@ -62,18 +63,19 @@ def update_job_application(
     application_id: str,
     payload: UpdateJobApplicationRequest,
     request: Request,
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
     current: ProductCurrentUser = Depends(get_product_user),
     db: Session = Depends(get_db),
 ):
     service = ProductRecommendationService(db)
-    return make_response(service.application_view(service.update_application(current, application_id, payload)), request=request)
+    return make_response(service.application_view(service.update_application(current, application_id, payload, idempotency_key)), request=request)
 
 
 @router.post("/recommendation-runs", response_model=APIResponse[RecommendationRunView], status_code=status.HTTP_202_ACCEPTED)
 def create_recommendation_run(
     payload: CreateRecommendationRunRequest,
     request: Request,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=255),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
     current: ProductCurrentUser = Depends(get_product_user),
     db: Session = Depends(get_db),
 ):

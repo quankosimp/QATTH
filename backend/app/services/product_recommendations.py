@@ -10,9 +10,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError
+from app.core.idempotency import IdempotencyService
 from app.core.identity_security import ProductCurrentUser
 from app.models.identity import UserProductProfile
-from app.models.product_cv import ProductCvVersion
+from app.models.product_cv import ProductCV, ProductCvVersion
 from app.models.product_interview import ProductInterview, ProductInterviewReport
 from app.models.product_jobs import CandidateProfile, JobSearchResult, JobSearchRun, ProductJob
 from app.models.product_recommendations import (
@@ -38,6 +39,7 @@ from app.schemas.product_recommendations import (
     UpsertJobInteractionRequest,
 )
 from app.services.product_job_search import ProductJobSearchService
+from app.services.identity import IdentityService
 
 
 def _utcnow() -> datetime:
@@ -81,7 +83,18 @@ class ProductRecommendationService:
         current: ProductCurrentUser,
         job_id: str,
         payload: UpsertJobInteractionRequest,
+        idempotency_key: str,
     ) -> JobInteraction:
+        IdentityService(self.db).require_consent(current.id)
+        idempotency = IdempotencyService(self.db)
+        result = idempotency.begin(
+            scope="user:" + current.id,
+            operation="recommendation.interaction:" + job_id,
+            key=idempotency_key,
+            request_hash=idempotency.request_hash(payload.model_dump(mode="json")),
+        )
+        if result.replayed:
+            return self._replayed_resource(current, result, JobInteraction, "JOB_INTERACTION_NOT_FOUND")
         job = self.db.get(ProductJob, job_id)
         if job is None:
             raise AppError(404, "JOB_NOT_FOUND", "Job was not found")
@@ -120,6 +133,7 @@ class ProductRecommendationService:
             elif moderation.status == "open":
                 moderation.reason_code = payload.reason_code
                 moderation.details = payload.note
+        idempotency.complete(result.record, resource_type="job_interaction", resource_id=interaction.id, response_status=200)
         self.db.commit()
         self.db.refresh(interaction)
         return interaction
@@ -141,23 +155,23 @@ class ProductRecommendationService:
         self,
         current: ProductCurrentUser,
         payload: CreateJobApplicationRequest,
-        idempotency_key: str | None,
+        idempotency_key: str,
     ) -> JobApplication:
+        IdentityService(self.db).require_consent(current.id)
         payload_hash = _request_hash(payload)
-        if idempotency_key:
-            existing = self.db.scalar(
-                select(JobApplication).where(
-                    JobApplication.user_id == current.id,
-                    JobApplication.idempotency_key == idempotency_key,
-                )
+        existing = self.db.scalar(
+            select(JobApplication).where(
+                JobApplication.user_id == current.id,
+                JobApplication.idempotency_key == idempotency_key,
             )
-            if existing is not None:
-                if existing.request_hash != payload_hash:
-                    raise AppError(409, "IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used with a different request")
-                return existing
+        )
+        if existing is not None:
+            if existing.request_hash != payload_hash:
+                raise AppError(409, "IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used with a different request")
+            return existing
         job = self.db.get(ProductJob, payload.job_id)
-        if job is None:
-            raise AppError(404, "JOB_NOT_FOUND", "Job was not found")
+        if job is None or job.status != "active":
+            raise AppError(404, "JOB_NOT_FOUND", "Active job was not found")
         job_snapshot = ProductJobSearchService(self.db).job_view(job).model_dump(mode="json")
         application = JobApplication(
             user_id=current.id,
@@ -192,7 +206,18 @@ class ProductRecommendationService:
         current: ProductCurrentUser,
         application_id: str,
         payload: UpdateJobApplicationRequest,
+        idempotency_key: str,
     ) -> JobApplication:
+        IdentityService(self.db).require_consent(current.id)
+        idempotency = IdempotencyService(self.db)
+        result = idempotency.begin(
+            scope="user:" + current.id,
+            operation="recommendation.update_application:" + application_id,
+            key=idempotency_key,
+            request_hash=idempotency.request_hash(payload.model_dump(mode="json")),
+        )
+        if result.replayed:
+            return self._replayed_resource(current, result, JobApplication, "JOB_APPLICATION_NOT_FOUND")
         application = self.db.scalar(select(JobApplication).where(JobApplication.id == application_id).with_for_update())
         if application is None or (current.role != "admin" and application.user_id != current.id):
             raise AppError(404, "JOB_APPLICATION_NOT_FOUND", "Job application was not found")
@@ -222,6 +247,7 @@ class ProductRecommendationService:
                 metadata_json={"version": application.version},
             )
         )
+        idempotency.complete(result.record, resource_type="job_application", resource_id=application.id, response_status=200)
         self.db.commit()
         self.db.refresh(application)
         return application
@@ -287,20 +313,20 @@ class ProductRecommendationService:
         self,
         current: ProductCurrentUser,
         payload: CreateRecommendationRunRequest,
-        idempotency_key: str | None,
+        idempotency_key: str,
     ) -> RecommendationRun:
+        IdentityService(self.db).require_consent(current.id)
         payload_hash = _request_hash(payload)
-        if idempotency_key:
-            existing = self.db.scalar(
-                select(RecommendationRun).where(
-                    RecommendationRun.user_id == current.id,
-                    RecommendationRun.idempotency_key == idempotency_key,
-                )
+        existing = self.db.scalar(
+            select(RecommendationRun).where(
+                RecommendationRun.user_id == current.id,
+                RecommendationRun.idempotency_key == idempotency_key,
             )
-            if existing is not None:
-                if existing.request_hash != payload_hash:
-                    raise AppError(409, "IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used with a different request")
-                return existing
+        )
+        if existing is not None:
+            if existing.request_hash != payload_hash:
+                raise AppError(409, "IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was already used with a different request")
+            return existing
         search_run = None
         if payload.search_run_id:
             search_run = self.db.get(JobSearchRun, payload.search_run_id)
@@ -351,14 +377,17 @@ class ProductRecommendationService:
                 return candidate
         if cv_version_id:
             version = self.db.scalar(
-                select(ProductCvVersion).where(ProductCvVersion.id == cv_version_id, ProductCvVersion.user_id == current.id)
+                select(ProductCvVersion)
+                .join(ProductCV, ProductCV.id == ProductCvVersion.cv_id)
+                .where(ProductCvVersion.id == cv_version_id, ProductCvVersion.user_id == current.id, ProductCV.status == "active")
             )
             if version is None:
                 raise AppError(404, "CV_VERSION_NOT_FOUND", "CV version was not found")
         else:
             version = self.db.scalar(
                 select(ProductCvVersion)
-                .where(ProductCvVersion.user_id == current.id)
+                .join(ProductCV, ProductCV.id == ProductCvVersion.cv_id)
+                .where(ProductCvVersion.user_id == current.id, ProductCV.status == "active")
                 .order_by(ProductCvVersion.created_at.desc())
             )
             if version is None:
@@ -424,6 +453,15 @@ class ProductRecommendationService:
         self.db.add(candidate)
         self.db.flush()
         return candidate
+
+    def _replayed_resource(self, current: ProductCurrentUser, result, model, not_found_code: str):
+        record = result.record
+        if record.status != "completed" or not record.resource_id:
+            raise AppError(409, "IDEMPOTENCY_REQUEST_IN_PROGRESS", "The original request has not completed", retryable=True)
+        resource = self.db.get(model, record.resource_id)
+        if resource is None or (current.role != "admin" and resource.user_id != current.id):
+            raise AppError(404, not_found_code, "The idempotent request resource was not found")
+        return resource
 
     def publish_dispatch_for_run(self, run_id: str) -> bool:
         dispatch = self.db.scalar(select(RecommendationDispatch).where(RecommendationDispatch.run_id == run_id).with_for_update())

@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.errors import AppError
+from app.core.idempotency import IdempotencyService
 from app.core.identity_security import ProductCurrentUser
 from app.models.db import User
 from app.models.identity import UserConsent, UserProductProfile, UserSession
@@ -80,7 +81,22 @@ class IdentityService:
         user_id: str,
         payload: ConsentWrite,
         evidence_context: dict[str, Any],
+        idempotency_key: str,
     ) -> UserConsent:
+        idempotency = IdempotencyService(self.db)
+        result = idempotency.begin(
+            scope="user:" + user_id,
+            operation="identity.consent:" + payload.purpose + ":" + payload.policy_version,
+            key=idempotency_key,
+            request_hash=idempotency.request_hash(payload.model_dump(mode="json")),
+        )
+        if result.replayed:
+            if result.record.status != "completed" or not result.record.resource_id:
+                raise AppError(409, "IDEMPOTENCY_REQUEST_IN_PROGRESS", "The original consent request has not completed", retryable=True)
+            consent = self.db.get(UserConsent, result.record.resource_id)
+            if consent is None or consent.user_id != user_id:
+                raise AppError(404, "CONSENT_NOT_FOUND", "Consent record was not found")
+            return consent
         consent = self.db.scalar(
             select(UserConsent).where(
                 UserConsent.user_id == user_id,
@@ -108,6 +124,8 @@ class IdentityService:
         else:
             consent.withdrawn_at = now
         consent.updated_at = now
+        self.db.flush()
+        idempotency.complete(result.record, resource_type="user_consent", resource_id=consent.id, response_status=200)
         self.db.commit()
         self.db.refresh(consent)
         return consent

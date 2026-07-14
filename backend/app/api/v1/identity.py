@@ -57,7 +57,7 @@ def put_consent(
     request: Request,
     current: ProductCurrentUser = Depends(get_product_user),
     db: Session = Depends(get_db),
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=255),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
 ) -> ConsentView:
     evidence = {
         "request_id": getattr(request.state, "request_id", None),
@@ -65,7 +65,7 @@ def put_consent(
         "user_agent": request.headers.get("user-agent", "")[:500],
         "idempotency_key": idempotency_key,
     }
-    return ConsentView.model_validate(IdentityService(db).write_consent(current.id, payload, evidence))
+    return ConsentView.model_validate(IdentityService(db).write_consent(current.id, payload, evidence, idempotency_key))
 
 
 @router.get("/sessions", response_model=list[SessionView])

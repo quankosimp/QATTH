@@ -167,6 +167,18 @@ def create_analysis(
     return make_response(service.analysis_view(service.create_analysis(current, version_id, idempotency_key)), request=request)
 
 
+@router.post("/cv-versions/{version_id}/drafts", response_model=APIResponse[CvDraftView], status_code=status.HTTP_201_CREATED)
+def create_cv_version_draft(
+    version_id: str,
+    request: Request,
+    current: ProductCurrentUser = Depends(get_product_user),
+    db: Session = Depends(get_db),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
+):
+    service = ProductCvService(db)
+    return make_response(service.draft_view(service.create_version_draft(current, version_id, idempotency_key)), request=request)
+
+
 @router.post("/cv-analyses/{analysis_id}/retry", response_model=APIResponse[CvAnalysisView], status_code=status.HTTP_202_ACCEPTED)
 def retry_analysis(
     analysis_id: str,
