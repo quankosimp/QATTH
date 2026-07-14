@@ -24,16 +24,18 @@ def noop_task(background_task_id: str) -> dict:
         db.close()
 
 
-@celery_app.task(name="product.cv.extract", acks_late=True)
-def extract_product_cv_task(scan_id: str) -> dict:
+@celery_app.task(bind=True, name="product.cv.extract", acks_late=True)
+def extract_product_cv_task(self, scan_id: str) -> dict:
     from app.models.product_cv import CvDraft, CvScan, ProductFileAsset
     from app.schemas.product_cv import CvContent
     from app.services.object_storage import ObjectStorage
     from app.services.openai_cv import OpenAICvAdapter
     from app.services.product_cv import _checksum
     from app.services.provider_usage import ProviderUsageService
+    from app.services.task_leases import ProductTaskLeaseService
 
     db = SessionLocal()
+    lease_id = str(self.request.id)
     try:
         scan = db.scalar(select(CvScan).where(CvScan.id == scan_id).with_for_update())
         if scan is None:
@@ -42,7 +44,8 @@ def extract_product_cv_task(scan_id: str) -> dict:
             return {"status": scan.status, "scan_id": scan_id}
         if scan.status not in {"queued", "extraction_failed"}:
             return {"status": "ignored", "scan_id": scan_id}
-        scan.status = "extracting"
+        if not ProductTaskLeaseService.claim(scan, lease_id, "extracting"):
+            return {"status": "in_progress", "scan_id": scan_id}
         scan.started_at = datetime.now(UTC)
         scan.error = None
         db.commit()
@@ -52,15 +55,13 @@ def extract_product_cv_task(scan_id: str) -> dict:
             raise RuntimeError("source file is not available")
         file_content = ObjectStorage().read(asset.object_key, asset.declared_size_bytes)
         extraction, provider = OpenAICvAdapter().extract(file_content, asset.original_filename, scan.locale_hint)
-        ProviderUsageService(db).success(
-            user_id=scan.user_id,
-            provider="openai",
-            purpose="cv_extraction",
-            resource_type="cv_scan",
-            resource_id=scan.id,
-            metadata=provider,
-        )
         serialized = CvContent.model_validate(extraction.content).model_dump(mode="json")
+        scan = db.scalar(
+            select(CvScan).where(CvScan.id == scan_id).execution_options(populate_existing=True).with_for_update()
+        )
+        if scan is None or not ProductTaskLeaseService.owns(scan, lease_id):
+            return {"status": "superseded", "scan_id": scan_id}
+        ProviderUsageService(db).success(user_id=scan.user_id, provider="openai", purpose="cv_extraction", resource_type="cv_scan", resource_id=scan.id, metadata=provider)
         draft = db.scalar(select(CvDraft).where(CvDraft.scan_id == scan.id))
         if draft is None:
             draft = CvDraft(
@@ -77,37 +78,44 @@ def extract_product_cv_task(scan_id: str) -> dict:
         scan.provider = "openai"
         scan.provider_run_id = provider.get("provider_run_id")
         scan.completed_at = datetime.now(UTC)
+        ProductTaskLeaseService.clear(scan)
         db.commit()
         return {"status": "draft_ready", "scan_id": scan_id, "draft_id": draft.id}
     except Exception as exc:
         db.rollback()
-        scan = db.get(CvScan, scan_id)
-        if scan is not None:
+        scan = db.scalar(select(CvScan).where(CvScan.id == scan_id).execution_options(populate_existing=True).with_for_update())
+        if scan is not None and ProductTaskLeaseService.owns(scan, lease_id):
             ProviderUsageService(db).failure(user_id=scan.user_id, provider="openai", purpose="cv_extraction", resource_type="cv_scan", resource_id=scan.id, error=exc)
             scan.status = "extraction_failed"
             scan.error = {"code": "CV_EXTRACTION_FAILED", "message": str(exc)[:1000]}
             scan.completed_at = datetime.now(UTC)
+            ProductTaskLeaseService.clear(scan)
             db.commit()
+        elif scan is not None:
+            return {"status": "superseded", "scan_id": scan_id}
         raise
     finally:
         db.close()
 
 
-@celery_app.task(name="product.cv.analyze", acks_late=True)
-def analyze_product_cv_task(analysis_id: str) -> dict:
+@celery_app.task(bind=True, name="product.cv.analyze", acks_late=True)
+def analyze_product_cv_task(self, analysis_id: str) -> dict:
     from app.models.product_cv import CvAnalysis, ProductCvVersion
     from app.schemas.product_cv import CvContent
     from app.services.openai_cv import OpenAICvAdapter
     from app.services.provider_usage import ProviderUsageService
+    from app.services.task_leases import ProductTaskLeaseService
 
     db = SessionLocal()
+    lease_id = str(self.request.id)
     try:
         analysis = db.scalar(select(CvAnalysis).where(CvAnalysis.id == analysis_id).with_for_update())
         if analysis is None:
             return {"status": "missing", "analysis_id": analysis_id}
         if analysis.status == "completed":
             return {"status": "completed", "analysis_id": analysis_id}
-        analysis.status = "processing"
+        if not ProductTaskLeaseService.claim(analysis, lease_id, "processing"):
+            return {"status": "in_progress", "analysis_id": analysis_id}
         analysis.started_at = datetime.now(UTC)
         analysis.error = None
         db.commit()
@@ -116,6 +124,11 @@ def analyze_product_cv_task(analysis_id: str) -> dict:
         if version is None:
             raise RuntimeError("CV version was not found")
         output, provider = OpenAICvAdapter().analyze(CvContent.model_validate(version.content))
+        analysis = db.scalar(
+            select(CvAnalysis).where(CvAnalysis.id == analysis_id).execution_options(populate_existing=True).with_for_update()
+        )
+        if analysis is None or not ProductTaskLeaseService.owns(analysis, lease_id):
+            return {"status": "superseded", "analysis_id": analysis_id}
         ProviderUsageService(db).success(user_id=analysis.user_id, provider="openai", purpose="cv_analysis", resource_type="cv_analysis", resource_id=analysis.id, metadata=provider)
         analysis.scores = output.scores
         analysis.findings = output.findings
@@ -128,6 +141,7 @@ def analyze_product_cv_task(analysis_id: str) -> dict:
         analysis.disclaimer = "AI-generated guidance; verify recommendations before changing or submitting your CV."
         analysis.status = "completed"
         analysis.completed_at = datetime.now(UTC)
+        ProductTaskLeaseService.clear(analysis)
         from app.services.product_billing import ProductBillingService
 
         ProductBillingService(db).capture(analysis.credit_reservation_id)
@@ -135,28 +149,33 @@ def analyze_product_cv_task(analysis_id: str) -> dict:
         return {"status": "completed", "analysis_id": analysis_id}
     except Exception as exc:
         db.rollback()
-        analysis = db.get(CvAnalysis, analysis_id)
-        if analysis is not None:
+        analysis = db.scalar(select(CvAnalysis).where(CvAnalysis.id == analysis_id).execution_options(populate_existing=True).with_for_update())
+        if analysis is not None and ProductTaskLeaseService.owns(analysis, lease_id):
             ProviderUsageService(db).failure(user_id=analysis.user_id, provider="openai", purpose="cv_analysis", resource_type="cv_analysis", resource_id=analysis.id, error=exc)
             analysis.status = "failed"
             analysis.error = {"code": "CV_ANALYSIS_FAILED", "message": str(exc)[:1000]}
             analysis.completed_at = datetime.now(UTC)
+            ProductTaskLeaseService.clear(analysis)
             from app.services.product_billing import ProductBillingService
 
             ProductBillingService(db).release(analysis.credit_reservation_id, "cv_analysis_failed")
             db.commit()
+        elif analysis is not None:
+            return {"status": "superseded", "analysis_id": analysis_id}
         raise
     finally:
         db.close()
 
 
-@celery_app.task(name="product.interview.evaluate", acks_late=True)
-def evaluate_product_interview_task(report_id: str) -> dict:
+@celery_app.task(bind=True, name="product.interview.evaluate", acks_late=True)
+def evaluate_product_interview_task(self, report_id: str) -> dict:
     from app.models.product_interview import ProductInterview, ProductInterviewEvent, ProductInterviewReport
     from app.services.openai_interview import OpenAIInterviewEvaluator
     from app.services.provider_usage import ProviderUsageService
+    from app.services.task_leases import ProductTaskLeaseService
 
     db = SessionLocal()
+    lease_id = str(self.request.id)
     try:
         report = db.scalar(
             select(ProductInterviewReport).where(ProductInterviewReport.id == report_id).with_for_update()
@@ -165,7 +184,8 @@ def evaluate_product_interview_task(report_id: str) -> dict:
             return {"status": "missing", "report_id": report_id}
         if report.status == "ready":
             return {"status": "ready", "report_id": report_id}
-        report.status = "processing"
+        if not ProductTaskLeaseService.claim(report, lease_id, "processing"):
+            return {"status": "in_progress", "report_id": report_id}
         report.error = None
         db.commit()
         interview = db.get(ProductInterview, report.interview_id)
@@ -197,11 +217,16 @@ def evaluate_product_interview_task(report_id: str) -> dict:
             interview.plan_snapshot,
             report.rubric_version,
         )
-        ProviderUsageService(db).success(user_id=report.user_id, provider="openai", purpose="interview_evaluation", resource_type="interview_report", resource_id=report.id, metadata=provider)
         known_event_ids = {event.id for event in events}
         for finding in [*output.strengths, *output.gaps]:
             if not finding.evidence_event_ids or not set(finding.evidence_event_ids).issubset(known_event_ids):
                 raise RuntimeError("Evaluation references unknown transcript evidence")
+        report = db.scalar(
+            select(ProductInterviewReport).where(ProductInterviewReport.id == report_id).execution_options(populate_existing=True).with_for_update()
+        )
+        if report is None or not ProductTaskLeaseService.owns(report, lease_id):
+            return {"status": "superseded", "report_id": report_id}
+        ProviderUsageService(db).success(user_id=report.user_id, provider="openai", purpose="interview_evaluation", resource_type="interview_report", resource_id=report.id, metadata=provider)
         report.scores = {
             "technical_depth": output.technical_depth,
             "communication": output.communication,
@@ -221,6 +246,7 @@ def evaluate_product_interview_task(report_id: str) -> dict:
         report.estimated_cost_minor = provider.get("estimated_cost_minor")
         report.status = "ready"
         report.completed_at = datetime.now(UTC)
+        ProductTaskLeaseService.clear(report)
         interview.status = "completed"
         interview.ended_at = interview.ended_at or datetime.now(UTC)
         from app.services.candidate_profiles import invalidate_candidate_profiles
@@ -230,16 +256,19 @@ def evaluate_product_interview_task(report_id: str) -> dict:
         return {"status": "ready", "report_id": report_id}
     except Exception as exc:
         db.rollback()
-        report = db.get(ProductInterviewReport, report_id)
-        if report is not None:
+        report = db.scalar(select(ProductInterviewReport).where(ProductInterviewReport.id == report_id).execution_options(populate_existing=True).with_for_update())
+        if report is not None and ProductTaskLeaseService.owns(report, lease_id):
             ProviderUsageService(db).failure(user_id=report.user_id, provider="openai", purpose="interview_evaluation", resource_type="interview_report", resource_id=report.id, error=exc)
             report.status = "failed"
             report.error = {"code": "INTERVIEW_EVALUATION_FAILED", "message": str(exc)[:1000]}
+            ProductTaskLeaseService.clear(report)
             interview = db.get(ProductInterview, report.interview_id)
             if interview is not None:
                 interview.status = "evaluation_failed"
                 interview.failure = report.error
             db.commit()
+        elif report is not None:
+            return {"status": "superseded", "report_id": report_id}
         raise
     finally:
         db.close()
@@ -264,6 +293,17 @@ def publish_product_task_dispatches_task() -> dict:
     try:
         published = ProductTaskDispatchService(db).publish_pending()
         return {"status": "completed", "dispatches_published": published}
+    finally:
+        db.close()
+
+
+@celery_app.task(name="product.tasks.recover_stalled")
+def recover_stalled_product_tasks_task() -> dict:
+    from app.services.task_leases import ProductTaskLeaseService
+
+    db = SessionLocal()
+    try:
+        return {"status": "completed", **ProductTaskLeaseService(db).recover_stalled()}
     finally:
         db.close()
 

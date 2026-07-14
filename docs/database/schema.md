@@ -26,7 +26,7 @@ Không lưu PDF trong PostgreSQL trừ artifact rất nhỏ có lý do được 
 | <code>0007</code>-<code>0014</code> | Identity/profile/consent, Product CV, interview, job search, recommendation, billing, privacy và admin/ops |
 | <code>0015</code>-<code>0019</code> | Identity/file/CV hardening, interview hardening, job search hardening, billing dual-control và provider usage observability |
 | <code>0020</code>-<code>0023</code> | Payment inbox/reconciliation, billable interview boundary, recommendation feedback và auditable ranking v2 |
-| <code>0024</code>-<code>0027</code> | OIDC provider-session identity, catalog schedule invariants, cumulative payment reversal/account review và durable AI task dispatch |
+| <code>0024</code>-<code>0028</code> | OIDC provider-session identity, catalog schedule invariants, cumulative payment reversal/account review, durable AI dispatch và worker processing leases |
 
 Migration trong <code>migrations/versions/</code> là lịch sử physical schema bất biến. Bảng/constraint trong tài liệu chưa có revision tương ứng phải được coi là gap và cần migration riêng; không dùng <code>create_all</code> để thay thế migration ở production.
 
@@ -139,7 +139,7 @@ Unique <code>(provider, bucket, object_key)</code>. Index owner/time và retenti
 
 ### cv_scan_runs
 
-<code>id</code>, <code>user_id</code>, <code>cv_id</code> nullable, <code>source_file_id</code>, status, schema version, current attempt, idempotency key, error code, queued/started/completed timestamps, created_at.
+<code>id</code>, <code>user_id</code>, <code>cv_id</code> nullable, <code>source_file_id</code>, status, schema version, current attempt, idempotency key, error code, processing lease ID/expiry, queued/started/completed timestamps, created_at.
 
 Unique <code>(user_id, idempotency_key)</code> khi key có. Index status/queued_at cho worker và user/created_at cho history.
 
@@ -190,7 +190,7 @@ Unique <code>(session_id, sequence_no)</code>; unique partial <code>(session_id,
 
 ### interview_evaluations
 
-<code>id</code>, <code>session_id</code>, version, status, rubric version, scores/findings/evidence JSONB, report artifact ID nullable, model run ID, error code, timestamps. Unique <code>(session_id, version)</code>; evidence tham chiếu sequence/event tồn tại ở application validation.
+<code>id</code>, <code>session_id</code>, version, status, rubric version, scores/findings/evidence JSONB, report artifact ID nullable, model run ID, processing lease ID/expiry, error code, timestamps. Unique <code>(session_id, version)</code>; evidence tham chiếu sequence/event tồn tại ở application validation.
 
 ## 8. Job discovery và search
 

@@ -94,6 +94,7 @@ class ProductInterviewReport(Base):
     __table_args__ = (
         UniqueConstraint("interview_id", "rubric_version", "attempt_number", name="uq_product_interview_report_attempt"),
         Index("ix_product_interview_reports_status_created", "status", "created_at"),
+        Index("ix_product_interview_reports_processing_lease", "status", "processing_lease_expires_at"),
     )
 
     id = Column(String(36), primary_key=True, default=_uuid)
@@ -116,6 +117,8 @@ class ProductInterviewReport(Base):
     usage_json = Column(JSON, nullable=True)
     estimated_cost_minor = Column(Integer, nullable=True)
     error = Column(JSON, nullable=True)
+    processing_lease_id = Column(String(255), nullable=True)
+    processing_lease_expires_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     completed_at = Column(DateTime(timezone=True), nullable=True)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)

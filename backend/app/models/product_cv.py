@@ -64,6 +64,7 @@ class CvScan(Base):
     __table_args__ = (
         UniqueConstraint("file_id", "schema_version", "attempt_number", name="uq_product_cv_scan_file_schema_attempt"),
         Index("ix_product_cv_scans_user_status", "user_id", "status"),
+        Index("ix_product_cv_scans_processing_lease", "status", "processing_lease_expires_at"),
     )
 
     id = Column(String(36), primary_key=True, default=_uuid)
@@ -80,6 +81,8 @@ class CvScan(Base):
     error = Column(JSON, nullable=True)
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
+    processing_lease_id = Column(String(255), nullable=True)
+    processing_lease_expires_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
 
@@ -121,7 +124,10 @@ class ProductCvVersion(Base):
 
 class CvAnalysis(Base):
     __tablename__ = "product_cv_analyses"
-    __table_args__ = (Index("ix_product_cv_analyses_user_status", "user_id", "status"),)
+    __table_args__ = (
+        Index("ix_product_cv_analyses_user_status", "user_id", "status"),
+        Index("ix_product_cv_analyses_processing_lease", "status", "processing_lease_expires_at"),
+    )
 
     id = Column(String(36), primary_key=True, default=_uuid)
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
@@ -142,5 +148,7 @@ class CvAnalysis(Base):
     credit_reservation_id = Column(String(36), nullable=True)
     started_at = Column(DateTime(timezone=True), nullable=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
+    processing_lease_id = Column(String(255), nullable=True)
+    processing_lease_expires_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
