@@ -1,0 +1,24 @@
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_recommendation_contract_exposes_product_routes() -> None:
+    source = (ROOT / "backend/app/api/v1/recommendations.py").read_text()
+    assert '"/jobs/{job_id}/interactions"' in source
+    assert '"/job-applications"' in source
+    assert '"/job-applications/{application_id}"' in source
+    assert '"/recommendation-runs"' in source
+    assert '"/recommendation-runs/{run_id}/results"' in source
+    assert 'alias="Idempotency-Key"' in source
+
+
+def test_recommendations_persist_versioned_evidence() -> None:
+    source = (ROOT / "backend/app/models/product_recommendations.py").read_text()
+    assert "candidate_profile_version" in source
+    assert "ranking_version" in source
+    assert "score_breakdown" in source
+    assert "evidence" in source
+    assert "product_job_application_events" in source
+    assert "product_job_moderation_cases" in source

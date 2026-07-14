@@ -255,3 +255,38 @@ def publish_product_job_search_dispatches_task() -> dict:
         return {"status": "completed", "dispatches_published": published}
     finally:
         db.close()
+
+
+@celery_app.task(name="product.recommendations.generate", acks_late=True)
+def execute_product_recommendation_task(run_id: str) -> dict:
+    from app.models.product_recommendations import RecommendationRun
+    from app.services.product_recommendations import ProductRecommendationService
+
+    db = SessionLocal()
+    try:
+        ProductRecommendationService(db).execute(run_id)
+        run = db.get(RecommendationRun, run_id)
+        return {"status": run.status if run else "missing", "run_id": run_id}
+    except Exception as exc:
+        db.rollback()
+        run = db.get(RecommendationRun, run_id)
+        if run is not None:
+            run.status = "failed"
+            run.error = {"code": "RECOMMENDATION_FAILED", "message": str(exc)[:1000]}
+            run.completed_at = datetime.now(UTC)
+            db.commit()
+        raise
+    finally:
+        db.close()
+
+
+@celery_app.task(name="product.recommendations.publish_dispatches")
+def publish_product_recommendation_dispatches_task() -> dict:
+    from app.services.product_recommendations import ProductRecommendationService
+
+    db = SessionLocal()
+    try:
+        published = ProductRecommendationService(db).publish_pending_dispatches()
+        return {"status": "completed", "dispatches_published": published}
+    finally:
+        db.close()

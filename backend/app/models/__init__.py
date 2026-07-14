@@ -45,3 +45,13 @@ from backend.app.models.product_jobs import (
     JobSourceRecord,
     ProductJob,
 )
+
+from backend.app.models.product_recommendations import (
+    JobApplication,
+    JobApplicationEvent,
+    JobInteraction,
+    JobModerationCase,
+    RecommendationDispatch,
+    RecommendationMatch,
+    RecommendationRun,
+)
