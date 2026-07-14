@@ -16,7 +16,7 @@ Ma trận này nối requirement với API contract, logical entity và automate
 |---|---|---|---|
 | FR-AUTH-001..004 | OIDC/JWKS verification, verified-email account mapping, provider-session revocation, admin account status; users/auth_identities/user_sessions/audit_events | <code>test_identity_contract.py</code>, <code>test_identity_security.py</code>, <code>test_product_admin_ops_contract.py</code> | Implemented; production OIDC configuration is environment acceptance |
 | FR-PROFILE-001..003 | profile, preferences, consents; user_job_preferences/consent_records | <code>test_identity_contract.py</code>, <code>test_contract.py</code> | Implemented |
-| FR-FILE-001..003 | upload intent/complete/download; file_assets | <code>test_product_cv_contract.py</code> | Implemented; production R2/malware engine evidence pending |
+| FR-FILE-001..003 | upload intent/complete/download, metadata/hash/PDF/malware validation, staging-to-clean object promotion; file_assets | <code>test_product_cv_contract.py</code>, <code>test_product_file_security.py</code> | Implemented; production R2/malware engine evidence pending |
 | FR-CV-001..009 | scans, attempts, drafts, versions, analysis, retry/archive; CV domain tables | <code>test_product_cv_contract.py</code> | Implemented |
 | FR-INT-001..002, FR-INT-004..008 | interview/session token/events/report/retry/feedback; interview tables/model_runs | <code>test_product_interview_contract.py</code> | Implemented |
 | FR-INT-003 | realtime WebSocket and Gemini Live adapter boundary | <code>test_product_interview_contract.py</code> and <code>test_gemini_interview_gateway.py</code> cover lifecycle, protocol, resumption and capacity; not real audio | Partial: staging voice, reconnect and backpressure acceptance required |

@@ -15,6 +15,7 @@ from app.core.errors import AppError
 class ObjectStat:
     size: int
     etag: str | None
+    content_type: str | None
     metadata: dict[str, str]
 
 
@@ -61,13 +62,18 @@ class ObjectStorage:
             path = self._local_path(object_key)
             if not path.is_file():
                 raise AppError(409, "UPLOAD_NOT_FOUND", "Uploaded object was not found")
-            return ObjectStat(size=path.stat().st_size, etag=None, metadata={})
+            return ObjectStat(size=path.stat().st_size, etag=None, content_type=None, metadata={})
         try:
             stat = self._client().stat_object(self.bucket, object_key)
         except Exception as exc:
             raise AppError(409, "UPLOAD_NOT_FOUND", "Uploaded object was not found") from exc
         metadata = {str(key).lower(): str(value) for key, value in (stat.metadata or {}).items()}
-        return ObjectStat(size=stat.size, etag=stat.etag, metadata=metadata)
+        return ObjectStat(
+            size=stat.size,
+            etag=stat.etag,
+            content_type=getattr(stat, "content_type", None),
+            metadata=metadata,
+        )
 
     def read(self, object_key: str, max_bytes: int) -> bytes:
         if self.backend == "local":

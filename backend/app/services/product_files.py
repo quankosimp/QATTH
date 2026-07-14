@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import socket
 import struct
 from datetime import datetime, timedelta, timezone
@@ -18,6 +19,9 @@ from app.models.product_cv import ProductFileAsset
 from app.schemas.product_cv import CompleteUploadRequest, CreateUploadIntentRequest, UploadIntentView
 from app.services.object_storage import ObjectStorage
 from app.services.identity import IdentityService
+
+
+logger = logging.getLogger(__name__)
 
 
 def _utcnow() -> datetime:
@@ -65,7 +69,7 @@ class ProductFileService:
                 declared_size_bytes=payload.size_bytes,
                 declared_sha256=payload.sha256.lower(),
                 bucket=self.storage.bucket,
-                object_key="users/" + current.id + "/cv-source/" + str(uuid4()) + ".pdf",
+                object_key="users/" + current.id + "/cv-staging/" + str(uuid4()) + ".pdf",
                 storage_backend=self.storage.backend,
                 expires_at=expires_at,
             )
@@ -133,21 +137,39 @@ class ProductFileService:
         stat = self.storage.stat(asset.object_key)
         if stat.size != asset.declared_size_bytes:
             return self._reject(asset, "Uploaded size differs from declared size", result.record)
+        if stat.content_type is not None and stat.content_type.lower() != asset.content_type.lower():
+            return self._reject(asset, "Uploaded content type differs from upload intent", result.record)
+        metadata_sha256 = stat.metadata.get("x-amz-meta-sha256") or stat.metadata.get("sha256")
+        if self.storage.backend != "local" and metadata_sha256 != asset.declared_sha256:
+            return self._reject(asset, "Uploaded checksum metadata differs from upload intent", result.record)
         content = self.storage.read(asset.object_key, asset.declared_size_bytes)
         actual_sha256 = hashlib.sha256(content).hexdigest()
         if actual_sha256 != asset.declared_sha256:
             return self._reject(asset, "Uploaded checksum differs from declared checksum", result.record)
-        self._validate_pdf(content)
-        self._scan_malware(content)
+        try:
+            self._validate_pdf(content)
+            self._scan_malware(content)
+        except AppError as exc:
+            if exc.status_code == 422:
+                return self._reject(asset, exc.message, result.record, code=exc.code)
+            raise
+        staging_key = asset.object_key
+        clean_key = "users/" + current.id + "/cv-clean/" + str(uuid4()) + ".pdf"
+        self.storage.put_system(clean_key, content, asset.content_type)
         asset.actual_size_bytes = len(content)
         asset.verified_sha256 = actual_sha256
         asset.provider_etag = payload.provider_etag or stat.etag
+        asset.object_key = clean_key
         asset.upload_status = "uploaded"
         asset.security_status = "clean"
         asset.uploaded_at = _utcnow()
         idempotency.complete(result.record, resource_type="product_file_asset", resource_id=asset.id, response_status=200)
         self.db.commit()
         self.db.refresh(asset)
+        try:
+            self.storage.delete(staging_key)
+        except Exception:
+            logger.warning("staging_file_cleanup_failed", extra={"file_id": asset.id})
         return asset
 
     def download_url(self, current: ProductCurrentUser, file_id: str, expires_seconds: int = 300) -> tuple[str, datetime]:
@@ -187,7 +209,7 @@ class ProductFileService:
             raise AppError(record.response_status, body.get("code", "FILE_REJECTED"), body.get("message", "File was rejected"))
         return self._owned(current, record.resource_id)
 
-    def _reject(self, asset: ProductFileAsset, reason: str, idempotency_record=None):
+    def _reject(self, asset: ProductFileAsset, reason: str, idempotency_record=None, *, code: str = "FILE_REJECTED"):
         asset.upload_status = "rejected"
         asset.security_status = "quarantined"
         asset.rejection_reason = reason
@@ -197,10 +219,10 @@ class ProductFileService:
                 resource_type="product_file_asset",
                 resource_id=asset.id,
                 response_status=422,
-                response_body={"code": "FILE_REJECTED", "message": reason},
+                response_body={"code": code, "message": reason},
             )
         self.db.commit()
-        raise AppError(422, "FILE_REJECTED", reason)
+        raise AppError(422, code, reason)
 
     @staticmethod
     def _validate_pdf(content: bytes) -> None:
