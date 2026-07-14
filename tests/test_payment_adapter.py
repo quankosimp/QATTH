@@ -36,7 +36,7 @@ def test_paddle_checkout_uses_server_side_offer_mapping() -> None:
         assert request.headers["Paddle-Version"] == "1"
         body = json.loads(request.content)
         assert body["items"] == [{"price_id": "pri_01test", "quantity": 1}]
-        assert body["custom_data"]["qatth_checkout_id"] == "checkout-1"
+        assert body["custom_data"] == {"qatth_checkout_id": "checkout-1", "qatth_offer_id": "offer-1"}
         return httpx.Response(
             201,
             json={"data": {"id": "txn_01test", "checkout": {"url": "https://pay.example/txn_01test"}}},
@@ -115,3 +115,40 @@ def test_payment_payload_redaction_preserves_audit_fields() -> None:
         "event_id": "evt_1",
         "data": {"email": "[REDACTED]", "amount": "70000"},
     }
+
+
+def test_paddle_reconciliation_uses_provider_state_without_webhook_payload() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/subscriptions/sub_01test":
+            return httpx.Response(
+                200,
+                json={"data": {"id": "sub_01test", "status": "canceled", "updated_at": "2026-07-15T12:00:00Z"}},
+            )
+        if request.url.path == "/transactions":
+            assert request.url.params["origin"] == "subscription_recurring"
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "id": "txn_renewal",
+                            "status": "completed",
+                            "origin": "subscription_recurring",
+                            "subscription_id": "sub_01test",
+                            "customer_id": "ctm_01test",
+                            "currency_code": "VND",
+                            "updated_at": "2026-07-15T11:00:00Z",
+                            "details": {"totals": {"grand_total": "99000"}},
+                            "billing_period": {
+                                "starts_at": "2026-07-01T00:00:00Z",
+                                "ends_at": "2026-08-01T00:00:00Z",
+                            },
+                        }
+                    ]
+                },
+            )
+        return httpx.Response(404)
+
+    events = _adapter(httpx.MockTransport(handler)).reconcile_subscription("sub_01test")
+    assert [event.event_type for event in events] == ["subscription.cancelled", "subscription.renewed"]
+    assert events[1].payload["period_reference"] == "txn_renewal"

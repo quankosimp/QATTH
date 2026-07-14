@@ -7,6 +7,7 @@ Tất cả thay đổi đáng chú ý của QATTH được ghi lại trong file 
 ## [Unreleased]
 
 ### Added
+- Scheduled Paddle checkout/subscription reconciliation, stuck inbox recovery and payment payload retention enforcement.
 - Paddle production billing adapter với checkout, customer portal, replay-safe webhook normalization và server-side offer mapping.
 - Live job discovery hardening với full OpenAI source provenance, local schema validation, domain policy và active-page verification.
 - Gemini Live realtime hardening với distributed session lease, reconnect/resumption, context compression, duration/idle limits và usage lineage.
@@ -23,6 +24,7 @@ Tất cả thay đổi đáng chú ý của QATTH được ghi lại trong file 
 
 ### Changed
 
+- Client checkout redirect URLs are retained only by QATTH and are no longer copied into provider metadata.
 - Payment reversal dùng provider transaction reference, hỗ trợ partial reversal và chỉ đưa account vào review khi phát sinh debt.
 - Định vị repository từ backend demo sang backend Product v1 của nền tảng hỗ trợ nghề nghiệp cho sinh viên IT.
 - Chuẩn hóa ranh giới sử dụng OpenAI và Gemini Live.

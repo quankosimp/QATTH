@@ -25,7 +25,7 @@ Ma trận này nối requirement với API contract, logical entity và automate
 | FR-JOB-006..009 | FTS/pgvector search, hard filters, rerank, explanations, run status/SSE | <code>test_product_job_search_contract.py</code>, <code>test_job_search.py</code> | Implemented; relevance/performance evidence tracked by NFR |
 | FR-REC-001..004 | candidate profile, recommendation run/items/feedback | <code>test_product_recommendations_contract.py</code> | Implemented |
 | FR-BILL-001, FR-BILL-004..011 | catalog, account/buckets/ledger/reservation/refund/review/approval | <code>test_product_billing_contract.py</code> | Implemented |
-| FR-BILL-002..003 | checkout/portal and webhook inbox adapter | <code>test_product_billing_contract.py</code> covers fail-closed/idempotency boundary | Partial until a payment provider adapter and signature/replay certification exist |
+| FR-BILL-002..003 | checkout/portal, Paddle adapter, webhook inbox, provider reconciliation and payload retention | <code>test_product_billing_contract.py</code>, <code>test_payment_adapter.py</code>, <code>test_payment_reconciliation_contract.py</code> cover mapping, signature/replay, normalization, retry and retention | Implemented in backend; Paddle sandbox certification remains release evidence |
 | FR-PRIV-001..003 | export/deletion/consent workflows; privacy_requests | <code>test_product_privacy_contract.py</code> | Implemented; production retention/backup expiry is NFR evidence |
 | FR-ADMIN-001..005 | resource/user search, model config, background job, source/moderation, credit dual-control | <code>test_product_admin_ops_contract.py</code>, <code>test_product_billing_contract.py</code> | Implemented |
 | FR-OPS-001..003 | health/readiness/diagnostics, correlation, Redis rate/quota | <code>test_contract.py</code>, <code>test_provider_resilience.py</code> | Implemented; multi-instance/load evidence remains an NFR gate |
@@ -42,7 +42,7 @@ Ma trận này nối requirement với API contract, logical entity và automate
 | NFR-DATA-005..006 | transactions/constraints, migration chain and reconciliation | Partial: migration from production-sized snapshot and provider reconciliation drill required |
 | NFR-SEC-001 | config/Docker boundary | Environment pending: TLS, encryption-at-rest and secret injection evidence |
 | NFR-SEC-002..004 | JWT validation, deny-by-default ownership/scope, Redis rate limits | Implemented in backend; identity/admin/provider tests |
-| NFR-SEC-005..008 | file state, webhook boundary, redaction and security process | Partial: malware engine, payment signature and release security scan evidence required |
+| NFR-SEC-005..008 | file state, Paddle signature/replay verification, payment redaction/retention and security process | Partial: malware engine and release security scan evidence required; payment backend controls implemented |
 | NFR-PRIV-001..004, NFR-PRIV-006 | consent, minimization/provider boundary, export/delete and admin masking/audit | Implemented in backend; privacy/identity/admin tests |
 | NFR-PRIV-005 | retention workflow | Partial: scheduler and backup expiration evidence required |
 | NFR-OBS-001..003, NFR-OBS-006 | correlation, Prometheus/provider metrics, structured events and audit | Implemented in backend; contract/resilience/admin tests |

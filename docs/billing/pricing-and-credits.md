@@ -248,6 +248,8 @@ Rules:
 6. Mark processed hoặc retryable failure.
 7. Reconciliation so sánh provider state định kỳ.
 
+Reconciliation production kiểm tra pending checkout transaction, recurring transaction theo subscription, subscription cancellation và retry inbox ở trạng thái failed hoặc processing quá lease. Raw provider payload được redact khi ingest, purge khi hết retention và chỉ giữ hash cùng normalized event cho audit/accounting.
+
 Webhook duplicate phải trả acknowledgement an toàn nhưng không lặp business effect.
 
 ### 8.3 Payment refund and chargeback

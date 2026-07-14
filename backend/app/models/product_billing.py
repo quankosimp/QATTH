@@ -249,6 +249,8 @@ class PaymentEventInbox(Base):
     raw_payload = Column(JSON, nullable=False)
     normalized_payload = Column(JSON, nullable=False)
     raw_payload_expires_at = Column(DateTime(timezone=True), nullable=False)
+    raw_payload_purged_at = Column(DateTime(timezone=True), nullable=True)
+    processing_started_at = Column(DateTime(timezone=True), nullable=True)
     error = Column(JSON, nullable=True)
     received_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
     processed_at = Column(DateTime(timezone=True), nullable=True)

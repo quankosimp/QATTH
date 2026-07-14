@@ -26,11 +26,12 @@ Paddle Billing is the first production adapter. The billing domain remains provi
 - Configure one Paddle price for every active internal offer code.
 - Configure webhook delivery for `transaction.completed`, `adjustment.created`, `adjustment.updated` and `subscription.canceled`.
 - Treat webhooks as authoritative for grants. A browser redirect never grants credits.
-- Reconcile provider transactions, subscriptions and failed inbox events on a scheduled job.
+- A scheduled reconciliation job retries failed/stuck inbox events, checks pending checkout transactions, lists completed recurring transactions by subscription and synchronizes canceled subscriptions.
+- A separate retention job purges redacted raw payload JSON after its retention deadline while preserving its hash and normalized accounting event.
 
 ## Consequences
 
-Paddle supplies the required subscription and portal lifecycle without coupling public APIs to provider price IDs. The adapter adds an external configuration mapping and a provider approval dependency. Paddle does not support arbitrary client-supplied idempotency keys, so unknown checkout-create outcomes require reconciliation rather than blind retries.
+Paddle supplies the required subscription and portal lifecycle without coupling public APIs to provider price IDs. The adapter adds an external configuration mapping and a provider approval dependency. Paddle does not support arbitrary client-supplied idempotency keys, so unknown checkout-create outcomes require reconciliation rather than blind retries. Client redirect URLs remain local to QATTH and are not copied into provider metadata.
 
 ## References
 

@@ -31,6 +31,8 @@ celery_app.conf.update(
         "publish-recommendation-dispatches": {"task": "product.recommendations.publish_dispatches", "schedule": 30.0},
         "publish-privacy-dispatches": {"task": "product.privacy.publish_dispatches", "schedule": 30.0},
         "reconcile-credit-reservations": {"task": "product.billing.reconcile_reservations", "schedule": 300.0},
+        "reconcile-payment-provider": {"task": "product.billing.reconcile_payments", "schedule": 900.0},
+        "cleanup-payment-payloads": {"task": "product.billing.cleanup_payment_payloads", "schedule": 3600.0},
         "expire-timed-out-interviews": {"task": "product.interview.expire_timed_out", "schedule": 60.0},
         "mark-stale-jobs": {"task": "product.jobs.mark_stale", "schedule": 3600.0},
         "cleanup-privacy-artifacts": {"task": "product.privacy.cleanup_artifacts", "schedule": 3600.0},

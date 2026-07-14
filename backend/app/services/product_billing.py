@@ -51,7 +51,7 @@ from app.schemas.product_billing import (
     UpdateFeatureCreditPriceRequest,
     UpdateSignupTrialPolicyRequest,
 )
-from app.services.payment_adapter import payment_adapter, redact_payment_payload
+from app.services.payment_adapter import NormalizedPaymentEvent, payment_adapter, redact_payment_payload
 
 
 def _utcnow() -> datetime:
@@ -452,17 +452,10 @@ class ProductBillingService:
             self.db.add(inbox)
         self.db.commit()
         inbox.status = "processing"
+        inbox.processing_started_at = _utcnow()
         self.db.commit()
         try:
-            if event.event_type in {"checkout.completed", "subscription.renewed"}:
-                self._payment_succeeded(provider, event.payload, event.event_id, event.event_type)
-            elif event.event_type in {"payment.refunded", "payment.chargeback"}:
-                self._payment_reversed(provider, event.payload, event.event_id, event.event_type)
-            elif event.event_type == "subscription.cancelled":
-                subscription = self.db.scalar(select(BillingSubscription).where(BillingSubscription.provider == provider, BillingSubscription.provider_subscription_id == str(event.payload.get("subscription_id"))))
-                if subscription:
-                    subscription.cancel_at_period_end = False
-                    subscription.status = "cancelled"
+            self._apply_payment_event(provider, event)
             inbox.status = "processed"
             inbox.processed_at = _utcnow()
             self.db.commit()
@@ -475,6 +468,168 @@ class ProductBillingService:
                 self.db.commit()
             raise
         return inbox
+
+    def _apply_payment_event(self, provider: str, event: NormalizedPaymentEvent) -> None:
+        if event.event_type in {"checkout.completed", "subscription.renewed"}:
+            self._payment_succeeded(provider, event.payload, event.event_id, event.event_type)
+        elif event.event_type in {"payment.refunded", "payment.chargeback"}:
+            self._payment_reversed(provider, event.payload, event.event_id, event.event_type)
+        elif event.event_type == "subscription.cancelled":
+            subscription = self.db.scalar(
+                select(BillingSubscription).where(
+                    BillingSubscription.provider == provider,
+                    BillingSubscription.provider_subscription_id == str(event.payload.get("subscription_id")),
+                )
+            )
+            if subscription:
+                subscription.cancel_at_period_end = False
+                subscription.status = "cancelled"
+
+    def _process_reconciled_event(self, provider: str, event: NormalizedPaymentEvent) -> bool:
+        existing = self.db.scalar(
+            select(PaymentEventInbox).where(
+                PaymentEventInbox.provider == provider,
+                PaymentEventInbox.provider_event_id == event.event_id,
+            )
+        )
+        if existing is not None and existing.status == "processed":
+            return False
+        now = _utcnow()
+        inbox = existing or PaymentEventInbox(
+            provider=provider,
+            provider_event_id=event.event_id,
+            event_type=event.event_type,
+            raw_body_hash=hashlib.sha256(event.event_id.encode()).hexdigest(),
+            raw_payload={},
+            normalized_payload=event.payload,
+            raw_payload_expires_at=now,
+            raw_payload_purged_at=now,
+        )
+        if existing is None:
+            self.db.add(inbox)
+        inbox.status = "processing"
+        inbox.processing_started_at = now
+        inbox.error = None
+        self.db.commit()
+        try:
+            self._apply_payment_event(provider, event)
+            inbox.status = "processed"
+            inbox.processed_at = _utcnow()
+            self.db.commit()
+        except Exception as exc:
+            self.db.rollback()
+            inbox = self.db.scalar(
+                select(PaymentEventInbox).where(
+                    PaymentEventInbox.provider == provider,
+                    PaymentEventInbox.provider_event_id == event.event_id,
+                )
+            )
+            if inbox is not None:
+                inbox.status = "failed"
+                inbox.error = {"code": "PAYMENT_RECONCILIATION_FAILED", "message": str(exc)[:1000]}
+                self.db.commit()
+            raise
+        return True
+
+    def reconcile_payment_provider(self, limit: int = 100) -> dict[str, int]:
+        stats = {"events_processed": 0, "events_failed": 0, "checkouts_checked": 0, "subscriptions_checked": 0}
+        stale_processing_before = _utcnow() - timedelta(minutes=5)
+        retry_ids = list(
+            self.db.scalars(
+                select(PaymentEventInbox.id)
+                .where(
+                    (PaymentEventInbox.status == "failed")
+                    | (
+                        (PaymentEventInbox.status == "processing")
+                        & (PaymentEventInbox.processing_started_at < stale_processing_before)
+                    )
+                )
+                .order_by(PaymentEventInbox.received_at)
+                .limit(limit)
+            )
+        )
+        for inbox_id in retry_ids:
+            inbox = self.db.get(PaymentEventInbox, inbox_id)
+            if inbox is None:
+                continue
+            event = NormalizedPaymentEvent(inbox.provider_event_id, inbox.event_type, inbox.normalized_payload)
+            try:
+                if self._process_reconciled_event(inbox.provider, event):
+                    stats["events_processed"] += 1
+            except Exception:
+                stats["events_failed"] += 1
+
+        remaining = max(0, limit - stats["events_processed"])
+        checkout_ids = list(
+            self.db.scalars(
+                select(BillingCheckoutSession.id)
+                .where(
+                    BillingCheckoutSession.status == "pending",
+                    BillingCheckoutSession.provider_session_id.is_not(None),
+                )
+                .order_by(BillingCheckoutSession.created_at)
+                .limit(remaining)
+            )
+        )
+        for checkout_id in checkout_ids:
+            checkout = self.db.get(BillingCheckoutSession, checkout_id)
+            if checkout is None or not checkout.provider_session_id:
+                continue
+            stats["checkouts_checked"] += 1
+            try:
+                events = payment_adapter(checkout.provider).reconcile_checkout(checkout.provider_session_id)
+                for event in events:
+                    if self._process_reconciled_event(checkout.provider, event):
+                        stats["events_processed"] += 1
+            except Exception:
+                stats["events_failed"] += 1
+
+        subscription_ids = list(
+            self.db.scalars(
+                select(BillingSubscription.id)
+                .where(
+                    BillingSubscription.status.in_({"active", "past_due"}),
+                    BillingSubscription.provider_subscription_id.is_not(None),
+                )
+                .order_by(BillingSubscription.created_at)
+                .limit(max(0, limit - stats["events_processed"]))
+            )
+        )
+        for subscription_id in subscription_ids:
+            subscription = self.db.get(BillingSubscription, subscription_id)
+            if subscription is None or not subscription.provider_subscription_id:
+                continue
+            stats["subscriptions_checked"] += 1
+            try:
+                events = payment_adapter(subscription.provider).reconcile_subscription(
+                    subscription.provider_subscription_id
+                )
+                for event in events:
+                    if self._process_reconciled_event(subscription.provider, event):
+                        stats["events_processed"] += 1
+            except Exception:
+                stats["events_failed"] += 1
+        return stats
+
+    def cleanup_expired_payment_payloads(self, limit: int = 500) -> int:
+        now = _utcnow()
+        records = list(
+            self.db.scalars(
+                select(PaymentEventInbox)
+                .where(
+                    PaymentEventInbox.raw_payload_purged_at.is_(None),
+                    PaymentEventInbox.raw_payload_expires_at <= now,
+                )
+                .order_by(PaymentEventInbox.raw_payload_expires_at)
+                .limit(limit)
+                .with_for_update(skip_locked=True)
+            )
+        )
+        for record in records:
+            record.raw_payload = {}
+            record.raw_payload_purged_at = now
+        self.db.commit()
+        return len(records)
 
     def _payment_succeeded(self, provider: str, payload: dict[str, Any], event_id: str, event_type: str) -> None:
         checkout = None

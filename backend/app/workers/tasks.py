@@ -351,6 +351,29 @@ def reconcile_product_credit_reservations_task() -> dict:
         db.close()
 
 
+@celery_app.task(name="product.billing.reconcile_payments")
+def reconcile_product_payments_task() -> dict:
+    from app.services.product_billing import ProductBillingService
+
+    db = SessionLocal()
+    try:
+        return {"status": "completed", **ProductBillingService(db).reconcile_payment_provider()}
+    finally:
+        db.close()
+
+
+@celery_app.task(name="product.billing.cleanup_payment_payloads")
+def cleanup_product_payment_payloads_task() -> dict:
+    from app.services.product_billing import ProductBillingService
+
+    db = SessionLocal()
+    try:
+        purged = ProductBillingService(db).cleanup_expired_payment_payloads()
+        return {"status": "completed", "payment_payloads_purged": purged}
+    finally:
+        db.close()
+
+
 @celery_app.task(name="product.privacy.execute", acks_late=True)
 def execute_product_privacy_request_task(request_id: str) -> dict:
     from app.models.product_privacy import PrivacyRequest

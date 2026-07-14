@@ -54,6 +54,12 @@ class PaymentAdapter:
     ) -> NormalizedPaymentEvent:
         raise AppError(503, "PAYMENT_PROVIDER_NOT_CONFIGURED", "Payment provider is not configured")
 
+    def reconcile_checkout(self, provider_session_id: str) -> list[NormalizedPaymentEvent]:
+        raise AppError(503, "PAYMENT_PROVIDER_NOT_CONFIGURED", "Payment provider is not configured")
+
+    def reconcile_subscription(self, provider_subscription_id: str) -> list[NormalizedPaymentEvent]:
+        raise AppError(503, "PAYMENT_PROVIDER_NOT_CONFIGURED", "Payment provider is not configured")
+
 
 class MockPaymentAdapter(PaymentAdapter):
     provider = "mock"
@@ -95,6 +101,14 @@ class MockPaymentAdapter(PaymentAdapter):
         if not event_id or not event_type or not isinstance(data, dict):
             raise AppError(422, "PAYMENT_EVENT_INVALID", "Payment event is malformed")
         return NormalizedPaymentEvent(event_id, event_type, data)
+
+    def reconcile_checkout(self, provider_session_id: str) -> list[NormalizedPaymentEvent]:
+        del provider_session_id
+        return []
+
+    def reconcile_subscription(self, provider_subscription_id: str) -> list[NormalizedPaymentEvent]:
+        del provider_subscription_id
+        return []
 
 
 class PaddlePaymentAdapter(PaymentAdapter):
@@ -154,6 +168,33 @@ class PaddlePaymentAdapter(PaymentAdapter):
             raise AppError(502, "PAYMENT_PROVIDER_RESPONSE_INVALID", "Payment provider response is malformed")
         return data
 
+    def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any] | list[dict[str, Any]]:
+        try:
+            response = self.client.get(path, params=params)
+        except httpx.HTTPError as exc:
+            raise AppError(503, "PAYMENT_PROVIDER_UNAVAILABLE", "Payment provider is unavailable") from exc
+        if response.status_code >= 400:
+            request_id = response.headers.get("request-id") or response.headers.get("x-request-id")
+            details = {"provider": self.provider}
+            if request_id:
+                details["provider_request_id"] = request_id
+            raise AppError(
+                502,
+                "PAYMENT_PROVIDER_REJECTED",
+                "Payment provider rejected the reconciliation request",
+                details=details,
+            )
+        try:
+            result = response.json()
+        except ValueError as exc:
+            raise AppError(502, "PAYMENT_PROVIDER_RESPONSE_INVALID", "Payment provider returned invalid JSON") from exc
+        data = result.get("data") if isinstance(result, dict) else None
+        if isinstance(data, dict):
+            return data
+        if isinstance(data, list) and all(isinstance(item, dict) for item in data):
+            return data
+        raise AppError(502, "PAYMENT_PROVIDER_RESPONSE_INVALID", "Payment provider response is malformed")
+
     def create_checkout(
         self,
         checkout_id: str,
@@ -172,8 +213,6 @@ class PaddlePaymentAdapter(PaymentAdapter):
                 "custom_data": {
                     "qatth_checkout_id": checkout_id,
                     "qatth_offer_id": str(offer_snapshot.get("id") or ""),
-                    "qatth_success_url": success_url,
-                    "qatth_cancel_url": cancel_url,
                 },
             },
         )
@@ -280,6 +319,47 @@ class PaddlePaymentAdapter(PaymentAdapter):
             normalized["subscription_id"] = data.get("id")
 
         return NormalizedPaymentEvent(event_id, normalized_type, normalized)
+
+    @staticmethod
+    def _reconciliation_payload(event_type: str, data: dict[str, Any]) -> dict[str, Any]:
+        entity_id = str(data.get("id") or "unknown")
+        version = str(data.get("updated_at") or data.get("status") or "unknown")
+        digest = hashlib.sha256(f"{event_type}:{entity_id}:{version}".encode()).hexdigest()[:32]
+        return {
+            "event_id": f"reconcile_{digest}",
+            "event_type": event_type,
+            "occurred_at": data.get("updated_at"),
+            "data": data,
+        }
+
+    def reconcile_checkout(self, provider_session_id: str) -> list[NormalizedPaymentEvent]:
+        data = self._get(f"/transactions/{provider_session_id}")
+        if not isinstance(data, dict) or data.get("status") != "completed":
+            return []
+        return [self._normalize_event(self._reconciliation_payload("transaction.completed", data))]
+
+    def reconcile_subscription(self, provider_subscription_id: str) -> list[NormalizedPaymentEvent]:
+        subscription = self._get(f"/subscriptions/{provider_subscription_id}")
+        if not isinstance(subscription, dict):
+            raise AppError(502, "PAYMENT_PROVIDER_RESPONSE_INVALID", "Paddle subscription response is malformed")
+        events: list[NormalizedPaymentEvent] = []
+        if subscription.get("status") == "canceled":
+            events.append(self._normalize_event(self._reconciliation_payload("subscription.canceled", subscription)))
+        transactions = self._get(
+            "/transactions",
+            params={
+                "subscription_id": provider_subscription_id,
+                "status": "completed",
+                "origin": "subscription_recurring",
+                "order_by": "updated_at[ASC]",
+                "per_page": 30,
+            },
+        )
+        if not isinstance(transactions, list):
+            raise AppError(502, "PAYMENT_PROVIDER_RESPONSE_INVALID", "Paddle transactions response is malformed")
+        for transaction in transactions:
+            events.append(self._normalize_event(self._reconciliation_payload("transaction.completed", transaction)))
+        return events
 
 
 _REDACTED_PAYMENT_KEYS = {
