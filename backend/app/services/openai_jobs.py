@@ -7,12 +7,12 @@ from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
-from backend.app.core.errors import AppError
+from app.core.errors import AppError
 
 
 class OpenAIJobsAdapter:
     def __init__(self) -> None:
-        from backend.app.services.runtime_configuration import runtime_model_configuration
+        from app.services.runtime_configuration import runtime_model_configuration
 
         self.api_key = os.getenv("OPENAI_API_KEY", "")
         self.base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")

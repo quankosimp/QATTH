@@ -3,11 +3,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, WebSocket, WebSocketDisconnect, status
 from sqlalchemy.orm import Session
 
-from backend.app.core.db import SessionLocal, get_db
-from backend.app.core.errors import AppError
-from backend.app.core.identity_security import ProductCurrentUser, get_product_user
-from backend.app.schemas.common import APIResponse, make_response
-from backend.app.schemas.product_interview import (
+from app.core.db import SessionLocal, get_db
+from app.core.errors import AppError
+from app.core.identity_security import ProductCurrentUser, get_product_user
+from app.schemas.common import APIResponse, make_response
+from app.schemas.product_interview import (
     CreateInterviewRequest,
     InterviewFeedbackRequest,
     InterviewFeedbackView,
@@ -16,8 +16,8 @@ from backend.app.schemas.product_interview import (
     InterviewView,
     RealtimeTokenView,
 )
-from backend.app.services.gemini_interview_gateway import GeminiInterviewGateway
-from backend.app.services.product_interview import ProductInterviewService
+from app.services.gemini_interview_gateway import GeminiInterviewGateway
+from app.services.product_interview import ProductInterviewService
 
 router = APIRouter(prefix="/interviews", tags=["Interviews"])
 

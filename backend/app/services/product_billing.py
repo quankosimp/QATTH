@@ -10,11 +10,11 @@ from urllib.parse import urlsplit
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import get_settings
-from backend.app.core.errors import AppError
-from backend.app.core.identity_security import ProductCurrentUser
-from backend.app.models.db import User
-from backend.app.models.product_billing import (
+from app.core.config import get_settings
+from app.core.errors import AppError
+from app.core.identity_security import ProductCurrentUser
+from app.models.db import User
+from app.models.product_billing import (
     BillingCatalogVersion,
     BillingCheckoutSession,
     BillingCommand,
@@ -30,7 +30,7 @@ from backend.app.models.product_billing import (
     SignupTrialGrant,
     SignupTrialPolicy,
 )
-from backend.app.schemas.product_billing import (
+from app.schemas.product_billing import (
     ActivateBillingCatalogRequest,
     BillingCatalogVersionView,
     BillingCatalogView,
@@ -48,7 +48,7 @@ from backend.app.schemas.product_billing import (
     UpdateFeatureCreditPriceRequest,
     UpdateSignupTrialPolicyRequest,
 )
-from backend.app.services.payment_adapter import payment_adapter
+from app.services.payment_adapter import payment_adapter
 
 
 def _utcnow() -> datetime:

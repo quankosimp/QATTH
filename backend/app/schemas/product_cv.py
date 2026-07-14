@@ -124,6 +124,8 @@ class CvScanView(BaseModel):
     id: str
     file_id: str
     cv_id: str | None
+    parent_scan_id: str | None
+    attempt_number: int
     status: str
     schema_version: str
     draft_id: str | None
@@ -192,8 +194,17 @@ class CvPage(BaseModel):
 class CvAnalysisView(BaseModel):
     id: str
     cv_version_id: str
+    parent_analysis_id: str | None
+    attempt_number: int
     status: str
     scores: dict[str, float] | None
     findings: list[dict[str, Any]] | None
+    provider: str | None
+    model: str | None
+    model_configuration_id: str | None
+    prompt_version: str | None
+    usage: dict[str, Any] | None
+    disclaimer: str | None
     error: dict[str, Any] | None
     created_at: datetime
+    completed_at: datetime | None

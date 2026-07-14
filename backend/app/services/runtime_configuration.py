@@ -4,9 +4,9 @@ from typing import Any
 
 from sqlalchemy import select
 
-from backend.app.core.db import SessionLocal
-from backend.app.core.errors import AppError
-from backend.app.models.product_admin_ops import ModelConfiguration
+from app.core.db import SessionLocal
+from app.core.errors import AppError
+from app.models.product_admin_ops import ModelConfiguration
 
 
 def runtime_model_configuration(purpose: str, provider: str, model: str) -> dict[str, Any]:

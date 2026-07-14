@@ -3,11 +3,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Header, Request, status
 from sqlalchemy.orm import Session
 
-from backend.app.core.db import get_db
-from backend.app.core.errors import AppError
-from backend.app.core.identity_security import ProductCurrentUser, get_product_user
-from backend.app.schemas.common import APIResponse, make_response
-from backend.app.schemas.product_cv import (
+from app.core.db import get_db
+from app.core.errors import AppError
+from app.core.identity_security import ProductCurrentUser, get_product_user
+from app.schemas.common import APIResponse, make_response
+from app.schemas.product_cv import (
     ConfirmCvDraftRequest,
     CreateCvScanRequest,
     CvAnalysisView,
@@ -16,9 +16,10 @@ from backend.app.schemas.product_cv import (
     CvPage,
     CvScanView,
     CvVersionView,
+    CvView,
     SetActiveVersionRequest,
 )
-from backend.app.services.product_cv import ProductCvService
+from app.services.product_cv import ProductCvService
 
 router = APIRouter(tags=["CV"])
 
@@ -37,10 +38,22 @@ def create_scan(
     request: Request,
     current: ProductCurrentUser = Depends(get_product_user),
     db: Session = Depends(get_db),
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=255),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
 ):
     service = ProductCvService(db)
-    return make_response(service.scan_view(service.create_scan(current, payload)), request=request)
+    return make_response(service.scan_view(service.create_scan(current, payload, idempotency_key)), request=request)
+
+
+@router.post("/cv-scans/{scan_id}/retry", response_model=APIResponse[CvScanView], status_code=status.HTTP_202_ACCEPTED)
+def retry_scan(
+    scan_id: str,
+    request: Request,
+    current: ProductCurrentUser = Depends(get_product_user),
+    db: Session = Depends(get_db),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
+):
+    service = ProductCvService(db)
+    return make_response(service.scan_view(service.retry_scan(current, scan_id, idempotency_key)), request=request)
 
 
 @router.get("/cv-scans/{scan_id}", response_model=APIResponse[CvScanView])
@@ -86,10 +99,10 @@ def confirm_draft(
     request: Request,
     current: ProductCurrentUser = Depends(get_product_user),
     db: Session = Depends(get_db),
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=255),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
 ):
     service = ProductCvService(db)
-    version = service.confirm(current, scan_id, payload)
+    version = service.confirm(current, scan_id, payload, idempotency_key)
     return make_response(service.version_view(version), request=request)
 
 
@@ -124,10 +137,22 @@ def set_active_version(
     request: Request,
     current: ProductCurrentUser = Depends(get_product_user),
     db: Session = Depends(get_db),
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=255),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
 ):
     service = ProductCvService(db)
-    return make_response(service.version_view(service.set_active_version(current, cv_id, payload.version_id)), request=request)
+    return make_response(service.version_view(service.set_active_version(current, cv_id, payload.version_id, idempotency_key)), request=request)
+
+
+@router.post("/cvs/{cv_id}/archive", response_model=APIResponse[CvView])
+def archive_cv(
+    cv_id: str,
+    request: Request,
+    current: ProductCurrentUser = Depends(get_product_user),
+    db: Session = Depends(get_db),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
+):
+    service = ProductCvService(db)
+    return make_response(service.cv_view(service.archive(current, cv_id, idempotency_key)), request=request)
 
 
 @router.post("/cv-versions/{version_id}/analyses", response_model=APIResponse[CvAnalysisView], status_code=status.HTTP_202_ACCEPTED)
@@ -136,10 +161,22 @@ def create_analysis(
     request: Request,
     current: ProductCurrentUser = Depends(get_product_user),
     db: Session = Depends(get_db),
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", max_length=255),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
 ):
     service = ProductCvService(db)
-    return make_response(service.analysis_view(service.create_analysis(current, version_id)), request=request)
+    return make_response(service.analysis_view(service.create_analysis(current, version_id, idempotency_key)), request=request)
+
+
+@router.post("/cv-analyses/{analysis_id}/retry", response_model=APIResponse[CvAnalysisView], status_code=status.HTTP_202_ACCEPTED)
+def retry_analysis(
+    analysis_id: str,
+    request: Request,
+    current: ProductCurrentUser = Depends(get_product_user),
+    db: Session = Depends(get_db),
+    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128),
+):
+    service = ProductCvService(db)
+    return make_response(service.analysis_view(service.retry_analysis(current, analysis_id, idempotency_key)), request=request)
 
 
 @router.get("/cv-analyses/{analysis_id}", response_model=APIResponse[CvAnalysisView])

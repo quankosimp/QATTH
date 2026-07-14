@@ -1,4 +1,4 @@
-from backend.app.main import app
+from app.main import app
 
 
 def test_product_job_search_contract_is_exposed() -> None:

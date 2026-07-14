@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from sqlalchemy.orm import Session
 
-from backend.app.core.db import get_db
-from backend.app.core.identity_security import ProductCurrentUser, get_product_user
-from backend.app.schemas.common import APIResponse, make_response
-from backend.app.schemas.product_privacy import CreateDeletionRequest, PrivacyRequestView
-from backend.app.services.product_privacy import ProductPrivacyService
+from app.core.db import get_db
+from app.core.identity_security import ProductCurrentUser, get_product_user
+from app.schemas.common import APIResponse, make_response
+from app.schemas.product_privacy import CreateDeletionRequest, PrivacyRequestView
+from app.services.product_privacy import ProductPrivacyService
 
 router = APIRouter(tags=["Privacy"])
 

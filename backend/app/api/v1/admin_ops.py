@@ -3,10 +3,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Header, Query, Request, status
 from sqlalchemy.orm import Session
 
-from backend.app.core.db import get_db
-from backend.app.core.identity_security import ProductCurrentUser, require_product_scopes
-from backend.app.schemas.common import APIResponse, make_response
-from backend.app.schemas.product_admin_ops import (
+from app.core.db import get_db
+from app.core.identity_security import ProductCurrentUser, require_product_scopes
+from app.schemas.common import APIResponse, make_response
+from app.schemas.product_admin_ops import (
     ActivateModelConfigurationRequest,
     AdminUserSummary,
     BackgroundJobPage,
@@ -20,7 +20,7 @@ from backend.app.schemas.product_admin_ops import (
     RetryBackgroundJobRequest,
     UpdateJobSourceRequest,
 )
-from backend.app.services.product_admin_ops import ProductAdminOpsService
+from app.services.product_admin_ops import ProductAdminOpsService
 
 router = APIRouter(tags=["Admin", "Operations"])
 

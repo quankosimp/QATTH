@@ -3,9 +3,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Header, Request, Response, status
 from sqlalchemy.orm import Session
 
-from backend.app.core.db import get_db
-from backend.app.core.identity_security import ProductCurrentUser, get_product_user
-from backend.app.schemas.identity import (
+from app.core.db import get_db
+from app.core.identity_security import ProductCurrentUser, get_product_user
+from app.schemas.identity import (
     ConsentView,
     ConsentWrite,
     ProductProfile,
@@ -14,7 +14,7 @@ from backend.app.schemas.identity import (
     SessionView,
     UserMe,
 )
-from backend.app.services.identity import IdentityService
+from app.services.identity import IdentityService
 
 router = APIRouter(prefix="/me", tags=["Identity and profile"])
 

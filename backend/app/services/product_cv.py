@@ -10,10 +10,11 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.errors import AppError
-from backend.app.core.identity_security import ProductCurrentUser
-from backend.app.models.product_cv import CvAnalysis, CvDraft, CvScan, ProductCV, ProductCvVersion
-from backend.app.schemas.product_cv import (
+from app.core.errors import AppError
+from app.core.idempotency import IdempotencyService
+from app.core.identity_security import ProductCurrentUser
+from app.models.product_cv import CvAnalysis, CvDraft, CvScan, ProductCV, ProductCvVersion
+from app.schemas.product_cv import (
     ConfirmCvDraftRequest,
     CreateCvScanRequest,
     CvAnalysisView,
@@ -25,7 +26,8 @@ from backend.app.schemas.product_cv import (
     CvVersionView,
     CvView,
 )
-from backend.app.services.product_files import ProductFileService
+from app.services.product_files import ProductFileService
+from app.services.identity import IdentityService
 
 
 def _utcnow() -> datetime:
@@ -54,7 +56,18 @@ class ProductCvService:
     def __init__(self, db: Session) -> None:
         self.db = db
 
-    def create_scan(self, current: ProductCurrentUser, payload: CreateCvScanRequest) -> CvScan:
+    def create_scan(self, current: ProductCurrentUser, payload: CreateCvScanRequest, idempotency_key: str) -> CvScan:
+        idempotency = IdempotencyService(self.db)
+        result = idempotency.begin(
+            scope="user:" + current.id,
+            operation="cv.create_scan",
+            key=idempotency_key,
+            request_hash=idempotency.request_hash(payload.model_dump(mode="json")),
+        )
+        replay = self._replayed_resource(current, result, CvScan, "CV_SCAN_NOT_FOUND")
+        if replay is not None:
+            return replay
+        IdentityService(self.db).require_consent(current.id)
         file_asset, _ = ProductFileService(self.db).read_owned(current, payload.file_id)
         if payload.cv_id:
             self._cv(current, payload.cv_id)
@@ -62,9 +75,12 @@ class ProductCvService:
             select(CvScan).where(
                 CvScan.file_id == payload.file_id,
                 CvScan.schema_version == payload.extraction_schema_version,
+                CvScan.attempt_number == 1,
             )
         )
         if existing is not None:
+            idempotency.complete(result.record, resource_type="cv_scan", resource_id=existing.id, response_status=202)
+            self.db.commit()
             return existing
         scan = CvScan(
             user_id=current.id,
@@ -73,17 +89,60 @@ class ProductCvService:
             status="queued",
             schema_version=payload.extraction_schema_version,
             locale_hint=payload.locale_hint,
+            attempt_number=1,
         )
         self.db.add(scan)
+        self.db.flush()
+        idempotency.complete(result.record, resource_type="cv_scan", resource_id=scan.id, response_status=202)
         self.db.commit()
         self.db.refresh(scan)
-        from backend.app.workers.tasks import extract_product_cv_task
+        self._dispatch_scan(scan)
+        return scan
+
+    def retry_scan(self, current: ProductCurrentUser, scan_id: str, idempotency_key: str) -> CvScan:
+        original = self.get_scan(current, scan_id)
+        idempotency = IdempotencyService(self.db)
+        result = idempotency.begin(
+            scope="user:" + current.id,
+            operation="cv.retry_scan:" + scan_id,
+            key=idempotency_key,
+            request_hash=idempotency.request_hash({"scan_id": scan_id}),
+        )
+        replay = self._replayed_resource(current, result, CvScan, "CV_SCAN_NOT_FOUND")
+        if replay is not None:
+            return replay
+        IdentityService(self.db).require_consent(current.id)
+        if original.status != "extraction_failed":
+            raise AppError(409, "CV_SCAN_NOT_RETRYABLE", "Only failed CV scans can be retried")
+        attempt = (self.db.scalar(select(func.max(CvScan.attempt_number)).where(
+            CvScan.file_id == original.file_id,
+            CvScan.schema_version == original.schema_version,
+        )) or 0) + 1
+        scan = CvScan(
+            user_id=current.id,
+            file_id=original.file_id,
+            cv_id=original.cv_id,
+            parent_scan_id=original.id,
+            attempt_number=attempt,
+            status="queued",
+            schema_version=original.schema_version,
+            locale_hint=original.locale_hint,
+        )
+        self.db.add(scan)
+        self.db.flush()
+        idempotency.complete(result.record, resource_type="cv_scan", resource_id=scan.id, response_status=202)
+        self.db.commit()
+        self.db.refresh(scan)
+        self._dispatch_scan(scan)
+        return scan
+
+    def _dispatch_scan(self, scan: CvScan) -> None:
+        from app.workers.tasks import extract_product_cv_task
 
         result = extract_product_cv_task.delay(scan.id)
         scan.provider_run_id = result.id
         self.db.commit()
         self.db.refresh(scan)
-        return scan
 
     def get_scan(self, current: ProductCurrentUser, scan_id: str) -> CvScan:
         scan = self.db.get(CvScan, scan_id)
@@ -124,10 +183,23 @@ class ProductCvService:
         self.db.refresh(draft)
         return draft
 
-    def confirm(self, current: ProductCurrentUser, scan_id: str, payload: ConfirmCvDraftRequest) -> ProductCvVersion:
+    def confirm(self, current: ProductCurrentUser, scan_id: str, payload: ConfirmCvDraftRequest, idempotency_key: str) -> ProductCvVersion:
         scan = self.get_scan(current, scan_id)
+        idempotency = IdempotencyService(self.db)
+        result = idempotency.begin(
+            scope="user:" + current.id,
+            operation="cv.confirm_scan:" + scan_id,
+            key=idempotency_key,
+            request_hash=idempotency.request_hash(payload.model_dump(mode="json")),
+        )
+        replay = self._replayed_resource(current, result, ProductCvVersion, "CV_VERSION_NOT_FOUND")
+        if replay is not None:
+            return replay
+        IdentityService(self.db).require_consent(current.id)
         existing = self.db.scalar(select(ProductCvVersion).where(ProductCvVersion.source_scan_id == scan.id))
         if existing is not None:
+            idempotency.complete(result.record, resource_type="cv_version", resource_id=existing.id, response_status=201)
+            self.db.commit()
             return existing
         if scan.status != "draft_ready":
             raise AppError(409, "CV_SCAN_NOT_CONFIRMABLE", "CV scan cannot be confirmed")
@@ -150,6 +222,8 @@ class ProductCvService:
             self.db.add(cv)
             self.db.flush()
             scan.cv_id = cv.id
+        elif cv.status != "active":
+            raise AppError(409, "CV_ARCHIVED", "Archived CVs cannot receive new versions")
         next_version = (self.db.scalar(select(func.max(ProductCvVersion.version)).where(ProductCvVersion.cv_id == cv.id)) or 0) + 1
         version = ProductCvVersion(
             cv_id=cv.id,
@@ -168,6 +242,7 @@ class ProductCvService:
         scan.status = "confirmed"
         scan.completed_at = _utcnow()
         draft.confirmed_at = _utcnow()
+        idempotency.complete(result.record, resource_type="cv_version", resource_id=version.id, response_status=201)
         self.db.commit()
         self.db.refresh(version)
         return version
@@ -192,8 +267,20 @@ class ProductCvService:
         cv = self._cv(current, cv_id)
         return list(self.db.scalars(select(ProductCvVersion).where(ProductCvVersion.cv_id == cv.id).order_by(ProductCvVersion.version.desc())))
 
-    def set_active_version(self, current: ProductCurrentUser, cv_id: str, version_id: str) -> ProductCvVersion:
+    def set_active_version(self, current: ProductCurrentUser, cv_id: str, version_id: str, idempotency_key: str) -> ProductCvVersion:
         cv = self._cv(current, cv_id)
+        idempotency = IdempotencyService(self.db)
+        result = idempotency.begin(
+            scope="user:" + current.id,
+            operation="cv.set_active_version:" + cv_id,
+            key=idempotency_key,
+            request_hash=idempotency.request_hash({"version_id": version_id}),
+        )
+        replay = self._replayed_resource(current, result, ProductCvVersion, "CV_VERSION_NOT_FOUND")
+        if replay is not None:
+            return replay
+        if cv.status != "active":
+            raise AppError(409, "CV_ARCHIVED", "Archived CVs cannot change active version")
         version = self.db.scalar(
             select(ProductCvVersion).where(ProductCvVersion.id == version_id, ProductCvVersion.cv_id == cv.id)
         )
@@ -201,30 +288,117 @@ class ProductCvService:
             raise AppError(404, "CV_VERSION_NOT_FOUND", "CV version was not found")
         cv.active_version_id = version.id
         cv.updated_at = _utcnow()
+        idempotency.complete(result.record, resource_type="cv_version", resource_id=version.id, response_status=200)
         self.db.commit()
         return version
 
-    def create_analysis(self, current: ProductCurrentUser, version_id: str) -> CvAnalysis:
+    def archive(self, current: ProductCurrentUser, cv_id: str, idempotency_key: str) -> ProductCV:
+        cv = self._cv(current, cv_id)
+        idempotency = IdempotencyService(self.db)
+        result = idempotency.begin(
+            scope="user:" + current.id,
+            operation="cv.archive:" + cv_id,
+            key=idempotency_key,
+            request_hash=idempotency.request_hash({"cv_id": cv_id}),
+        )
+        replay = self._replayed_resource(current, result, ProductCV, "CV_NOT_FOUND")
+        if replay is not None:
+            return replay
+        cv.status = "archived"
+        cv.active_version_id = None
+        cv.updated_at = _utcnow()
+        idempotency.complete(result.record, resource_type="cv", resource_id=cv.id, response_status=200)
+        self.db.commit()
+        self.db.refresh(cv)
+        return cv
+
+    def create_analysis(self, current: ProductCurrentUser, version_id: str, idempotency_key: str) -> CvAnalysis:
+        idempotency = IdempotencyService(self.db)
+        result = idempotency.begin(
+            scope="user:" + current.id,
+            operation="cv.create_analysis:" + version_id,
+            key=idempotency_key,
+            request_hash=idempotency.request_hash({"version_id": version_id}),
+        )
+        replay = self._replayed_resource(current, result, CvAnalysis, "CV_ANALYSIS_NOT_FOUND")
+        if replay is not None:
+            return replay
+        IdentityService(self.db).require_consent(current.id)
         version = self.db.scalar(
-            select(ProductCvVersion).where(ProductCvVersion.id == version_id, ProductCvVersion.user_id == current.id)
+            select(ProductCvVersion)
+            .join(ProductCV, ProductCV.id == ProductCvVersion.cv_id)
+            .where(
+                ProductCvVersion.id == version_id,
+                ProductCvVersion.user_id == current.id,
+                ProductCV.status == "active",
+            )
         )
         if version is None:
             raise AppError(404, "CV_VERSION_NOT_FOUND", "CV version was not found")
-        analysis = CvAnalysis(user_id=current.id, cv_version_id=version.id, status="queued")
+        analysis = CvAnalysis(user_id=current.id, cv_version_id=version.id, status="queued", attempt_number=1)
         self.db.add(analysis)
         self.db.flush()
-        from backend.app.services.product_billing import ProductBillingService
+        from app.services.product_billing import ProductBillingService
 
         reservation = ProductBillingService(self.db).reserve(current, "cv_analysis", "cv_analysis", analysis.id)
         analysis.credit_reservation_id = reservation.id if reservation else None
+        idempotency.complete(result.record, resource_type="cv_analysis", resource_id=analysis.id, response_status=202)
         self.db.commit()
         self.db.refresh(analysis)
-        from backend.app.workers.tasks import analyze_product_cv_task
+        self._dispatch_analysis(analysis)
+        return analysis
+
+    def retry_analysis(self, current: ProductCurrentUser, analysis_id: str, idempotency_key: str) -> CvAnalysis:
+        original = self.get_analysis(current, analysis_id)
+        idempotency = IdempotencyService(self.db)
+        result = idempotency.begin(
+            scope="user:" + current.id,
+            operation="cv.retry_analysis:" + analysis_id,
+            key=idempotency_key,
+            request_hash=idempotency.request_hash({"analysis_id": analysis_id}),
+        )
+        replay = self._replayed_resource(current, result, CvAnalysis, "CV_ANALYSIS_NOT_FOUND")
+        if replay is not None:
+            return replay
+        IdentityService(self.db).require_consent(current.id)
+        if original.status != "failed":
+            raise AppError(409, "CV_ANALYSIS_NOT_RETRYABLE", "Only failed CV analyses can be retried")
+        version = self.db.scalar(
+            select(ProductCvVersion)
+            .join(ProductCV, ProductCV.id == ProductCvVersion.cv_id)
+            .where(ProductCvVersion.id == original.cv_version_id, ProductCV.status == "active")
+        )
+        if version is None:
+            raise AppError(409, "CV_ARCHIVED", "Archived CVs cannot be analyzed")
+        attempt = (self.db.scalar(select(func.max(CvAnalysis.attempt_number)).where(
+            CvAnalysis.cv_version_id == original.cv_version_id
+        )) or 0) + 1
+        analysis = CvAnalysis(
+            user_id=current.id,
+            cv_version_id=version.id,
+            parent_analysis_id=original.id,
+            attempt_number=attempt,
+            status="queued",
+        )
+        self.db.add(analysis)
+        self.db.flush()
+        from app.services.product_billing import ProductBillingService
+
+        reservation = ProductBillingService(self.db).reserve(current, "cv_analysis", "cv_analysis", analysis.id)
+        analysis.credit_reservation_id = reservation.id if reservation else None
+        idempotency.complete(result.record, resource_type="cv_analysis", resource_id=analysis.id, response_status=202)
+        self.db.commit()
+        self.db.refresh(analysis)
+        self._dispatch_analysis(analysis)
+        return analysis
+
+    def _dispatch_analysis(self, analysis: CvAnalysis) -> None:
+        from app.workers.tasks import analyze_product_cv_task
 
         result = analyze_product_cv_task.delay(analysis.id)
         analysis.provider_run_id = result.id
         self.db.commit()
-        return analysis
+        self.db.refresh(analysis)
 
     def get_analysis(self, current: ProductCurrentUser, analysis_id: str) -> CvAnalysis:
         analysis = self.db.get(CvAnalysis, analysis_id)
@@ -238,6 +412,8 @@ class ProductCvService:
             id=scan.id,
             file_id=scan.file_id,
             cv_id=scan.cv_id,
+            parent_scan_id=scan.parent_scan_id,
+            attempt_number=scan.attempt_number,
             status=scan.status,
             schema_version=scan.schema_version,
             draft_id=draft,
@@ -288,12 +464,32 @@ class ProductCvService:
         return CvAnalysisView(
             id=analysis.id,
             cv_version_id=analysis.cv_version_id,
+            parent_analysis_id=analysis.parent_analysis_id,
+            attempt_number=analysis.attempt_number,
             status=analysis.status,
             scores=analysis.scores,
             findings=analysis.findings,
+            provider=analysis.provider,
+            model=analysis.model_name,
+            model_configuration_id=analysis.model_configuration_id,
+            prompt_version=analysis.prompt_version,
+            usage=analysis.usage_json,
+            disclaimer=analysis.disclaimer,
             error=analysis.error,
             created_at=analysis.created_at,
+            completed_at=analysis.completed_at,
         )
+
+    def _replayed_resource(self, current: ProductCurrentUser, result, model, not_found_code: str):
+        if not result.replayed:
+            return None
+        record = result.record
+        if record.status != "completed" or not record.resource_id:
+            raise AppError(409, "IDEMPOTENCY_REQUEST_IN_PROGRESS", "The original request has not completed", retryable=True)
+        resource = self.db.get(model, record.resource_id)
+        if resource is None or (current.role != "admin" and resource.user_id != current.id):
+            raise AppError(404, not_found_code, "The idempotent request resource was not found")
+        return resource
 
     def _cv(self, current: ProductCurrentUser, cv_id: str | None) -> ProductCV:
         cv = self.db.get(ProductCV, cv_id) if cv_id else None

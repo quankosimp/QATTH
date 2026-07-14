@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
 
-from backend.app.models.db import Base
+from app.models.db import Base
 
 
 def _uuid() -> str:
@@ -62,7 +62,7 @@ class ProductCV(Base):
 class CvScan(Base):
     __tablename__ = "product_cv_scans"
     __table_args__ = (
-        UniqueConstraint("file_id", "schema_version", name="uq_product_cv_scan_file_schema"),
+        UniqueConstraint("file_id", "schema_version", "attempt_number", name="uq_product_cv_scan_file_schema_attempt"),
         Index("ix_product_cv_scans_user_status", "user_id", "status"),
     )
 
@@ -70,6 +70,8 @@ class CvScan(Base):
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     file_id = Column(String(36), ForeignKey("product_file_assets.id", ondelete="RESTRICT"), nullable=False)
     cv_id = Column(String(36), ForeignKey("product_cvs.id", ondelete="SET NULL"), nullable=True)
+    parent_scan_id = Column(String(36), ForeignKey("product_cv_scans.id", ondelete="SET NULL"), nullable=True)
+    attempt_number = Column(Integer, nullable=False, default=1)
     status = Column(String(32), nullable=False, default="queued")
     schema_version = Column(String(32), nullable=False)
     locale_hint = Column(String(16), nullable=True)
@@ -124,11 +126,18 @@ class CvAnalysis(Base):
     id = Column(String(36), primary_key=True, default=_uuid)
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     cv_version_id = Column(String(36), ForeignKey("product_cv_versions.id", ondelete="CASCADE"), nullable=False)
+    parent_analysis_id = Column(String(36), ForeignKey("product_cv_analyses.id", ondelete="SET NULL"), nullable=True)
+    attempt_number = Column(Integer, nullable=False, default=1)
     status = Column(String(24), nullable=False, default="queued")
     scores = Column(JSON, nullable=True)
     findings = Column(JSON, nullable=True)
     provider = Column(String(40), nullable=True)
     provider_run_id = Column(String(255), nullable=True)
+    model_name = Column(String(255), nullable=True)
+    model_configuration_id = Column(String(36), nullable=True)
+    prompt_version = Column(String(80), nullable=True)
+    usage_json = Column(JSON, nullable=True)
+    disclaimer = Column(Text, nullable=True)
     error = Column(JSON, nullable=True)
     credit_reservation_id = Column(String(36), nullable=True)
     started_at = Column(DateTime(timezone=True), nullable=True)

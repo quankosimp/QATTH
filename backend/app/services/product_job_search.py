@@ -14,12 +14,12 @@ from sqlalchemy import Text, cast, func, literal, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Session
 
-from backend.app.core.errors import AppError
-from backend.app.core.identity_security import ProductCurrentUser
-from backend.app.models.identity import UserProductProfile
-from backend.app.models.product_cv import ProductCvVersion
-from backend.app.models.product_interview import ProductInterview, ProductInterviewReport
-from backend.app.models.product_jobs import (
+from app.core.errors import AppError
+from app.core.identity_security import ProductCurrentUser
+from app.models.identity import UserProductProfile
+from app.models.product_cv import ProductCvVersion
+from app.models.product_interview import ProductInterview, ProductInterviewReport
+from app.models.product_jobs import (
     CandidateProfile,
     JobEmbedding,
     JobSearchEvent,
@@ -31,7 +31,7 @@ from backend.app.models.product_jobs import (
     JobSourceRecord,
     ProductJob,
 )
-from backend.app.schemas.product_jobs import (
+from app.schemas.product_jobs import (
     CreateJobSearchRequest,
     JobMatchPage,
     JobMatchView,
@@ -41,9 +41,9 @@ from backend.app.schemas.product_jobs import (
     JobView,
     SalaryView,
 )
-from backend.app.services.openai_jobs import OpenAIJobsAdapter
-from backend.app.services.object_storage import ObjectStorage
-from backend.app.services.safe_job_fetch import SafeJobFetcher
+from app.services.openai_jobs import OpenAIJobsAdapter
+from app.services.object_storage import ObjectStorage
+from app.services.safe_job_fetch import SafeJobFetcher
 
 
 def _utcnow() -> datetime:
@@ -137,7 +137,7 @@ class ProductJobSearchService:
             return True
         dispatch.attempts += 1
         try:
-            from backend.app.workers.tasks import execute_product_job_search_task
+            from app.workers.tasks import execute_product_job_search_task
 
             execute_product_job_search_task.delay(run_id)
         except Exception as exc:

@@ -17,16 +17,16 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
-import backend.app.models  # noqa: F401 - register all product tables for export/deletion traversal
-from backend.app.core.config import get_settings
-from backend.app.core.errors import AppError
-from backend.app.core.identity_security import ProductCurrentUser
-from backend.app.models.db import AuthToken, Base, User
-from backend.app.models.identity import AccountStatusEvent, AuthIdentity, UserConsent, UserProductProfile, UserSession
-from backend.app.models.product_cv import ProductFileAsset
-from backend.app.models.product_privacy import DeletionTombstone, PrivacyArtifact, PrivacyDispatch, PrivacyEvent, PrivacyRequest
-from backend.app.schemas.product_privacy import CreateDeletionRequest, PrivacyRequestView, PrivacySignedUrl
-from backend.app.services.object_storage import ObjectStorage
+import app.models  # noqa: F401 - register all product tables for export/deletion traversal
+from app.core.config import get_settings
+from app.core.errors import AppError
+from app.core.identity_security import ProductCurrentUser
+from app.models.db import AuthToken, Base, User
+from app.models.identity import AccountStatusEvent, AuthIdentity, UserConsent, UserProductProfile, UserSession
+from app.models.product_cv import ProductFileAsset
+from app.models.product_privacy import DeletionTombstone, PrivacyArtifact, PrivacyDispatch, PrivacyEvent, PrivacyRequest
+from app.schemas.product_privacy import CreateDeletionRequest, PrivacyRequestView, PrivacySignedUrl
+from app.services.object_storage import ObjectStorage
 
 
 def _utcnow() -> datetime:
@@ -131,7 +131,7 @@ class ProductPrivacyService:
             return True
         dispatch.attempts += 1
         try:
-            from backend.app.workers.tasks import execute_product_privacy_request_task
+            from app.workers.tasks import execute_product_privacy_request_task
 
             execute_product_privacy_request_task.delay(request_id)
         except Exception as exc:

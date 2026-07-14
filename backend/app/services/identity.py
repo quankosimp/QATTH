@@ -6,11 +6,12 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.errors import AppError
-from backend.app.core.identity_security import ProductCurrentUser
-from backend.app.models.db import User
-from backend.app.models.identity import UserConsent, UserProductProfile, UserSession
-from backend.app.schemas.identity import ConsentWrite, ProfilePatch
+from app.core.config import get_settings
+from app.core.errors import AppError
+from app.core.identity_security import ProductCurrentUser
+from app.models.db import User
+from app.models.identity import UserConsent, UserProductProfile, UserSession
+from app.schemas.identity import ConsentWrite, ProfilePatch
 
 
 def _utcnow() -> datetime:
@@ -49,6 +50,30 @@ class IdentityService:
                 .order_by(UserConsent.purpose, UserConsent.updated_at.desc())
             )
         )
+
+    def require_consent(
+        self,
+        user_id: str,
+        purpose: str = "product_processing",
+        policy_version: str | None = None,
+    ) -> UserConsent:
+        version = policy_version or get_settings().product_processing_policy_version
+        consent = self.db.scalar(
+            select(UserConsent).where(
+                UserConsent.user_id == user_id,
+                UserConsent.purpose == purpose,
+                UserConsent.policy_version == version,
+                UserConsent.status == "granted",
+            )
+        )
+        if consent is None:
+            raise AppError(
+                403,
+                "CONSENT_REQUIRED",
+                "Active consent is required before product data can be processed",
+                details={"purpose": purpose, "policy_version": version},
+            )
+        return consent
 
     def write_consent(
         self,

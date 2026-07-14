@@ -8,7 +8,7 @@ from app.models.foundation import IdempotencyRecord, OutboxEvent
 
 __all__ = ["IdempotencyRecord", "OutboxEvent"]
 
-from backend.app.models.identity import (
+from app.models.identity import (
     AccountStatusEvent,
     AuthIdentity,
     UserConsent,
@@ -16,7 +16,7 @@ from backend.app.models.identity import (
     UserSession,
 )
 
-from backend.app.models.product_cv import (
+from app.models.product_cv import (
     CvAnalysis,
     CvDraft,
     CvScan,
@@ -25,7 +25,7 @@ from backend.app.models.product_cv import (
     ProductFileAsset,
 )
 
-from backend.app.models.product_interview import (
+from app.models.product_interview import (
     InterviewFeedback,
     InterviewRealtimeToken,
     ProductInterview,
@@ -33,7 +33,7 @@ from backend.app.models.product_interview import (
     ProductInterviewReport,
 )
 
-from backend.app.models.product_jobs import (
+from app.models.product_jobs import (
     CandidateProfile,
     JobEmbedding,
     JobSearchEvent,
@@ -46,7 +46,7 @@ from backend.app.models.product_jobs import (
     ProductJob,
 )
 
-from backend.app.models.product_recommendations import (
+from app.models.product_recommendations import (
     JobApplication,
     JobApplicationEvent,
     JobInteraction,
@@ -56,7 +56,7 @@ from backend.app.models.product_recommendations import (
     RecommendationRun,
 )
 
-from backend.app.models.product_billing import (
+from app.models.product_billing import (
     BillingCatalogVersion,
     BillingCheckoutSession,
     BillingCommand,
@@ -73,7 +73,7 @@ from backend.app.models.product_billing import (
     SignupTrialPolicy,
 )
 
-from backend.app.models.product_privacy import (
+from app.models.product_privacy import (
     DeletionTombstone,
     PrivacyArtifact,
     PrivacyDispatch,
@@ -81,7 +81,7 @@ from backend.app.models.product_privacy import (
     PrivacyRequest,
 )
 
-from backend.app.models.product_admin_ops import (
+from app.models.product_admin_ops import (
     AuditChainHead,
     ModelConfiguration,
     OperationalJob,

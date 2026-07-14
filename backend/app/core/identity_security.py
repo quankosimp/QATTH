@@ -20,11 +20,11 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import get_settings
-from backend.app.core.db import get_db
-from backend.app.core.errors import AppError
-from backend.app.models.db import AuthToken, User
-from backend.app.models.identity import AuthIdentity, UserProductProfile, UserSession
+from app.core.config import get_settings
+from app.core.db import get_db
+from app.core.errors import AppError
+from app.models.db import AuthToken, User
+from app.models.identity import AuthIdentity, UserProductProfile, UserSession
 
 logger = logging.getLogger(__name__)
 bearer = HTTPBearer(auto_error=False)

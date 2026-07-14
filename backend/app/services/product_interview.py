@@ -11,17 +11,17 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.errors import AppError
-from backend.app.core.identity_security import ProductCurrentUser
-from backend.app.models.product_cv import ProductCvVersion
-from backend.app.models.product_interview import (
+from app.core.errors import AppError
+from app.core.identity_security import ProductCurrentUser
+from app.models.product_cv import ProductCvVersion
+from app.models.product_interview import (
     InterviewFeedback,
     InterviewRealtimeToken,
     ProductInterview,
     ProductInterviewEvent,
     ProductInterviewReport,
 )
-from backend.app.schemas.product_interview import (
+from app.schemas.product_interview import (
     CreateInterviewRequest,
     EvidenceFinding,
     InterviewFeedbackRequest,
@@ -62,7 +62,7 @@ class ProductInterviewService:
         )
         if version is None:
             raise AppError(404, "CV_VERSION_NOT_FOUND", "CV version was not found")
-        from backend.app.services.runtime_configuration import runtime_model_configuration
+        from app.services.runtime_configuration import runtime_model_configuration
 
         runtime = runtime_model_configuration("interview_live", "gemini", os.getenv("GEMINI_LIVE_MODEL", "gemini-3.1-flash-live-preview"))
         gemini_model = runtime["model"]
@@ -89,7 +89,7 @@ class ProductInterviewService:
         )
         self.db.add(interview)
         self.db.flush()
-        from backend.app.services.product_billing import ProductBillingService
+        from app.services.product_billing import ProductBillingService
 
         reservation = ProductBillingService(self.db).reserve(
             current,
@@ -296,7 +296,7 @@ class ProductInterviewService:
         transcript_version = self.db.scalar(
             select(func.max(ProductInterviewEvent.sequence)).where(ProductInterviewEvent.interview_id == interview.id)
         ) or 0
-        from backend.app.services.runtime_configuration import runtime_model_configuration
+        from app.services.runtime_configuration import runtime_model_configuration
 
         evaluation_runtime = runtime_model_configuration(
             "interview_evaluation",
@@ -322,11 +322,11 @@ class ProductInterviewService:
             self.db.add(report)
         interview.status = "evaluating"
         interview.ended_at = interview.ended_at or _utcnow()
-        from backend.app.services.product_billing import ProductBillingService
+        from app.services.product_billing import ProductBillingService
 
         ProductBillingService(self.db).capture(interview.credit_reservation_id)
         self.db.commit()
-        from backend.app.workers.tasks import evaluate_product_interview_task
+        from app.workers.tasks import evaluate_product_interview_task
 
         evaluate_product_interview_task.delay(report.id)
         self.db.refresh(interview)
@@ -339,7 +339,7 @@ class ProductInterviewService:
         if interview.status != "cancelled":
             interview.status = "cancelled"
             interview.ended_at = _utcnow()
-            from backend.app.services.product_billing import ProductBillingService
+            from app.services.product_billing import ProductBillingService
 
             ProductBillingService(self.db).release(interview.credit_reservation_id, "interview_cancelled")
             self.db.commit()

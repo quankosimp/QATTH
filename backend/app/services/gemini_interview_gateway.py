@@ -14,11 +14,11 @@ import websockets
 from fastapi import WebSocket
 from pydantic import ValidationError
 
-from backend.app.core.db import SessionLocal
-from backend.app.core.errors import AppError
-from backend.app.models.product_interview import ProductInterview
-from backend.app.schemas.product_interview import RealtimeClientEvent
-from backend.app.services.product_interview import ProductInterviewService
+from app.core.db import SessionLocal
+from app.core.errors import AppError
+from app.models.product_interview import ProductInterview
+from app.schemas.product_interview import RealtimeClientEvent
+from app.services.product_interview import ProductInterviewService
 
 
 class GeminiInterviewGateway:

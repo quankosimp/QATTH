@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.app.schemas.product_jobs import JobView
+from app.schemas.product_jobs import JobView
 
 
 InteractionType = Literal["viewed", "saved", "dismissed", "reported"]

@@ -7,8 +7,8 @@ from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlparse
 
-from backend.app.core.config import get_settings
-from backend.app.core.errors import AppError
+from app.core.config import get_settings
+from app.core.errors import AppError
 
 
 @dataclass(frozen=True)

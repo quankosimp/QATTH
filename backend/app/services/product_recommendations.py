@@ -9,13 +9,13 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.errors import AppError
-from backend.app.core.identity_security import ProductCurrentUser
-from backend.app.models.identity import UserProductProfile
-from backend.app.models.product_cv import ProductCvVersion
-from backend.app.models.product_interview import ProductInterview, ProductInterviewReport
-from backend.app.models.product_jobs import CandidateProfile, JobSearchResult, JobSearchRun, ProductJob
-from backend.app.models.product_recommendations import (
+from app.core.errors import AppError
+from app.core.identity_security import ProductCurrentUser
+from app.models.identity import UserProductProfile
+from app.models.product_cv import ProductCvVersion
+from app.models.product_interview import ProductInterview, ProductInterviewReport
+from app.models.product_jobs import CandidateProfile, JobSearchResult, JobSearchRun, ProductJob
+from app.models.product_recommendations import (
     JobApplication,
     JobApplicationEvent,
     JobInteraction,
@@ -24,7 +24,7 @@ from backend.app.models.product_recommendations import (
     RecommendationMatch,
     RecommendationRun,
 )
-from backend.app.schemas.product_recommendations import (
+from app.schemas.product_recommendations import (
     CreateJobApplicationRequest,
     CreateRecommendationRunRequest,
     JobApplicationEventView,
@@ -37,7 +37,7 @@ from backend.app.schemas.product_recommendations import (
     UpdateJobApplicationRequest,
     UpsertJobInteractionRequest,
 )
-from backend.app.services.product_job_search import ProductJobSearchService
+from app.services.product_job_search import ProductJobSearchService
 
 
 def _utcnow() -> datetime:
@@ -431,7 +431,7 @@ class ProductRecommendationService:
             return True
         dispatch.attempts += 1
         try:
-            from backend.app.workers.tasks import execute_product_recommendation_task
+            from app.workers.tasks import execute_product_recommendation_task
 
             execute_product_recommendation_task.delay(run_id)
         except Exception as exc:

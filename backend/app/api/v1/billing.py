@@ -5,11 +5,11 @@ import json
 from fastapi import APIRouter, Depends, Header, Query, Request, status
 from sqlalchemy.orm import Session
 
-from backend.app.core.db import get_db
-from backend.app.core.errors import AppError
-from backend.app.core.identity_security import ProductCurrentUser, get_product_user, require_product_scopes
-from backend.app.schemas.common import APIResponse, make_response
-from backend.app.schemas.product_billing import (
+from app.core.db import get_db
+from app.core.errors import AppError
+from app.core.identity_security import ProductCurrentUser, get_product_user, require_product_scopes
+from app.schemas.common import APIResponse, make_response
+from app.schemas.product_billing import (
     ActivateBillingCatalogRequest,
     BillingCatalogVersionView,
     BillingCatalogView,
@@ -25,7 +25,7 @@ from backend.app.schemas.product_billing import (
     UpdateFeatureCreditPriceRequest,
     UpdateSignupTrialPolicyRequest,
 )
-from backend.app.services.product_billing import ProductBillingService
+from app.services.product_billing import ProductBillingService
 
 router = APIRouter(tags=["Billing"])
 billing_read = require_product_scopes("admin:billing:read")
@@ -99,7 +99,7 @@ def activate_catalog_version(catalog_version_id: str, payload: ActivateBillingCa
 def set_feature_credit_price(feature_key: str, payload: UpdateFeatureCreditPriceRequest, request: Request, idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=8, max_length=128), current: ProductCurrentUser = Depends(billing_write), db: Session = Depends(get_db)):
     service = ProductBillingService(db)
     price = service.update_feature_price(current, payload.catalog_version_id, feature_key, payload, idempotency_key)
-    catalog = db.get(__import__("backend.app.models.product_billing", fromlist=["BillingCatalogVersion"]).BillingCatalogVersion, payload.catalog_version_id)
+    catalog = db.get(__import__("app.models.product_billing", fromlist=["BillingCatalogVersion"]).BillingCatalogVersion, payload.catalog_version_id)
     return make_response(service.price_view(price, catalog), request=request)
 
 

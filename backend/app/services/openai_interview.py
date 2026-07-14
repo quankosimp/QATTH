@@ -7,8 +7,8 @@ from typing import Any
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
-from backend.app.core.errors import AppError
-from backend.app.schemas.product_interview import EvidenceFinding
+from app.core.errors import AppError
+from app.schemas.product_interview import EvidenceFinding
 
 
 class InterviewEvaluationOutput(BaseModel):
@@ -26,7 +26,7 @@ class InterviewEvaluationOutput(BaseModel):
 
 class OpenAIInterviewEvaluator:
     def __init__(self) -> None:
-        from backend.app.services.runtime_configuration import runtime_model_configuration
+        from app.services.runtime_configuration import runtime_model_configuration
 
         self.api_key = os.getenv("OPENAI_API_KEY", "")
         fallback_model = os.getenv("OPENAI_INTERVIEW_MODEL", os.getenv("OPENAI_CV_MODEL", "gpt-4.1-mini"))

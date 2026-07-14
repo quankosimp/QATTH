@@ -50,8 +50,8 @@ def extract_product_cv_task(scan_id: str) -> dict:
         if asset is None or asset.upload_status != "uploaded" or asset.security_status != "clean":
             raise RuntimeError("source file is not available")
         file_content = ObjectStorage().read(asset.object_key, asset.declared_size_bytes)
-        content, provider = OpenAICvAdapter().extract(file_content, asset.original_filename, scan.locale_hint)
-        serialized = CvContent.model_validate(content).model_dump(mode="json")
+        extraction, provider = OpenAICvAdapter().extract(file_content, asset.original_filename, scan.locale_hint)
+        serialized = CvContent.model_validate(extraction.content).model_dump(mode="json")
         draft = db.scalar(select(CvDraft).where(CvDraft.scan_id == scan.id))
         if draft is None:
             draft = CvDraft(
@@ -59,8 +59,8 @@ def extract_product_cv_task(scan_id: str) -> dict:
                 revision=1,
                 schema_version=scan.schema_version,
                 content=serialized,
-                field_confidence={},
-                warnings=[],
+                field_confidence=extraction.field_confidence,
+                warnings=extraction.warnings,
                 checksum=_checksum(serialized),
             )
             db.add(draft)
@@ -109,6 +109,11 @@ def analyze_product_cv_task(analysis_id: str) -> dict:
         analysis.findings = output.findings
         analysis.provider = "openai"
         analysis.provider_run_id = provider.get("provider_run_id")
+        analysis.model_name = provider.get("model")
+        analysis.model_configuration_id = provider.get("model_configuration_id")
+        analysis.prompt_version = provider.get("prompt_version")
+        analysis.usage_json = provider.get("usage", {})
+        analysis.disclaimer = "AI-generated guidance; verify recommendations before changing or submitting your CV."
         analysis.status = "completed"
         analysis.completed_at = datetime.now(UTC)
         from app.services.product_billing import ProductBillingService

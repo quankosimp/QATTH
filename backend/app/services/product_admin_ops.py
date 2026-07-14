@@ -10,16 +10,16 @@ import redis
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.celery_app import celery_app
-from backend.app.core.config import get_settings
-from backend.app.core.errors import AppError
-from backend.app.core.identity_security import ProductCurrentUser
-from backend.app.models.db import User
-from backend.app.models.identity import UserProductProfile
-from backend.app.models.product_admin_ops import AuditChainHead, ModelConfiguration, OperationalJob, PrivilegedAuditEvent, PrivilegedCommand
-from backend.app.models.product_jobs import JobSource, JobSourceRecord, ProductJob
-from backend.app.models.product_recommendations import JobModerationCase
-from backend.app.schemas.product_admin_ops import (
+from app.core.celery_app import celery_app
+from app.core.config import get_settings
+from app.core.errors import AppError
+from app.core.identity_security import ProductCurrentUser
+from app.models.db import User
+from app.models.identity import UserProductProfile
+from app.models.product_admin_ops import AuditChainHead, ModelConfiguration, OperationalJob, PrivilegedAuditEvent, PrivilegedCommand
+from app.models.product_jobs import JobSource, JobSourceRecord, ProductJob
+from app.models.product_recommendations import JobModerationCase
+from app.schemas.product_admin_ops import (
     AdminUserSummary,
     BackgroundJobPage,
     BackgroundJobView,

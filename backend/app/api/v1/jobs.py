@@ -8,12 +8,12 @@ from fastapi import APIRouter, Depends, Header, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from backend.app.core.db import SessionLocal, get_db
-from backend.app.core.errors import AppError
-from backend.app.core.identity_security import ProductCurrentUser, get_product_user
-from backend.app.schemas.common import APIResponse, make_response
-from backend.app.schemas.product_jobs import CreateJobSearchRequest, JobMatchPage, JobPage, JobSearchRunView, JobView
-from backend.app.services.product_job_search import ProductJobSearchService
+from app.core.db import SessionLocal, get_db
+from app.core.errors import AppError
+from app.core.identity_security import ProductCurrentUser, get_product_user
+from app.schemas.common import APIResponse, make_response
+from app.schemas.product_jobs import CreateJobSearchRequest, JobMatchPage, JobPage, JobSearchRunView, JobView
+from app.services.product_job_search import ProductJobSearchService
 
 router = APIRouter(tags=["Jobs"])
 

@@ -7,8 +7,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-from backend.app.core.config import get_settings
-from backend.app.core.errors import AppError
+from app.core.config import get_settings
+from app.core.errors import AppError
 
 
 @dataclass(frozen=True)

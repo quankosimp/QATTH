@@ -9,7 +9,7 @@ from urllib.parse import urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 
-from backend.app.core.errors import AppError
+from app.core.errors import AppError
 
 
 MAX_RESPONSE_BYTES = 1024 * 1024

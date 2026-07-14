@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
 
-from backend.app.models.db import Base
+from app.models.db import Base
 
 
 def _uuid() -> str:

@@ -6,7 +6,7 @@ from uuid import uuid4
 from sqlalchemy import BigInteger, Column, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 
-from backend.app.models.db import Base
+from app.models.db import Base
 
 try:
     from pgvector.sqlalchemy import Vector

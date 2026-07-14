@@ -43,6 +43,7 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     rate_limit_requests_per_minute: int = 120
     idempotency_ttl_seconds: int = 86_400
+    product_processing_policy_version: str = "2026-07-14"
 
     oidc_issuer: str | None = None
     oidc_audience: str | None = None
@@ -94,6 +95,8 @@ class Settings(BaseSettings):
             raise ValueError("RATE_LIMIT_REQUESTS_PER_MINUTE must be positive.")
         if self.signed_url_ttl_seconds < 30:
             raise ValueError("SIGNED_URL_TTL_SECONDS must be at least 30 seconds.")
+        if not self.product_processing_policy_version.strip():
+            raise ValueError("PRODUCT_PROCESSING_POLICY_VERSION must not be empty.")
 
         if self.app_env != "production":
             return self
