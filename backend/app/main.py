@@ -71,8 +71,10 @@ def create_app() -> FastAPI:
         app.include_router(legacy_api_router, prefix=settings.legacy_api_prefix)
 
     if settings.prometheus_enabled:
+        from app.core.product_metrics import register_product_metrics
         from prometheus_fastapi_instrumentator import Instrumentator
 
+        register_product_metrics()
         Instrumentator(
             should_group_status_codes=False,
             should_ignore_untemplated=True,
