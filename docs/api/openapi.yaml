@@ -501,7 +501,7 @@ paths:
       summary: Start CV analysis
       operationId: createCvAnalysis
       x-implementation-status: partial
-      x-requirement-ids: [FR-CV-007]
+      x-requirement-ids: [FR-CV-007, FR-BILL-005]
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       responses:
@@ -572,7 +572,7 @@ paths:
       summary: Create an interview session
       operationId: createInterview
       x-implementation-status: partial
-      x-requirement-ids: [FR-INT-001]
+      x-requirement-ids: [FR-INT-001, FR-BILL-005]
       parameters:
         - $ref: '#/components/parameters/IdempotencyKey'
       requestBody:
@@ -3052,6 +3052,46 @@ components:
         catalog_version:
           type: string
 
+    BillingOfferDraft:
+      type: object
+      required: [code, display_name, offer_type, amount_minor, currency, credit_grant]
+      properties:
+        code:
+          type: string
+          pattern: '^[A-Z][A-Z0-9_]{2,63}$'
+        display_name:
+          type: string
+        offer_type:
+          $ref: '#/components/schemas/BillingOfferType'
+        amount_minor:
+          type: integer
+          minimum: 1
+        currency:
+          type: string
+          const: VND
+        billing_interval:
+          type: [string, 'null']
+          enum: [month, null]
+        credit_grant:
+          type: integer
+          minimum: 1
+      additionalProperties: false
+
+    FeatureCreditPriceDraft:
+      type: object
+      required: [feature_key, credit_cost]
+      properties:
+        feature_key:
+          type: string
+          pattern: '^[a-z][a-z0-9_]{1,63}$'
+        credit_cost:
+          type: integer
+          minimum: 0
+        maximum_duration_minutes:
+          type: [integer, 'null']
+          minimum: 1
+      additionalProperties: false
+
     BillingCatalog:
       type: object
       required: [catalog_version, currency, subscription_offers, topup_offers, feature_prices]
@@ -3322,12 +3362,12 @@ components:
           type: array
           minItems: 1
           items:
-            $ref: '#/components/schemas/BillingOffer'
+            $ref: '#/components/schemas/BillingOfferDraft'
         feature_prices:
           type: array
           minItems: 1
           items:
-            $ref: '#/components/schemas/FeatureCreditPrice'
+            $ref: '#/components/schemas/FeatureCreditPriceDraft'
       additionalProperties: false
 
     UpdateFeatureCreditPriceRequest:

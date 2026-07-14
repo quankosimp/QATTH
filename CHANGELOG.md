@@ -7,6 +7,7 @@ Tất cả thay đổi đáng chú ý của QATTH được ghi lại trong file 
 ## [Unreleased]
 
 ### Added
+- Đặc tả hybrid subscription, top-up, signup trial, bucketed credits và provider-neutral payment.
 
 - Bộ requirements có ID ổn định cho Product v1.
 - Kiến trúc mục tiêu tách API, worker, PostgreSQL/pgvector, Redis và object storage.

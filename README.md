@@ -24,7 +24,7 @@ Repository hiện chứa backend demo đã chạy được và bộ tài liệu 
 | AI | Gemini và adapter demo | OpenAI cho text/search/embedding, Gemini Live cho voice, model run audit |
 | Dữ liệu | PostgreSQL/SQLite và object storage demo | Managed PostgreSQL + pgvector, R2, Redis |
 | Vận hành | Docker Compose local | Container API/worker có health check, migration và observability |
-| Thanh toán | Chưa có | Subscription, credit ledger, reservation và webhook idempotent |
+| Thanh toán | Chưa có | Hybrid subscription + top-up, versioned catalog, bucketed credits và webhook idempotent |
 
 Mỗi operation trong [OpenAPI Product v1](docs/api/openapi.yaml) có trường <code>x-implementation-status</code> để phân biệt <code>implemented-demo</code>, <code>partial</code> và <code>planned</code>. Tài liệu mục tiêu không đồng nghĩa toàn bộ endpoint đã tồn tại trong code hiện tại.
 
@@ -85,6 +85,7 @@ Xem [Architecture Overview](docs/architecture/overview.md).
 ├── scripts/                  # Local/database utilities
 ├── docs/
 │   ├── requirements/         # Functional và non-functional requirements
+│   ├── billing\/              # Pricing, subscription, top-up và credit policy
 │   ├── architecture/         # System context, components và data flows
 │   ├── api/openapi.yaml      # Product v1 API contract
 │   ├── database/schema.md    # Logical schema và migration rules
@@ -169,9 +170,11 @@ CV, transcript, đánh giá phỏng vấn và lịch sử ứng tuyển là dữ
 - [Data Flow](docs/architecture/data-flow.md)
 - [OpenAPI Product v1](docs/api/openapi.yaml)
 - [Database Schema](docs/database/schema.md)
+- [Pricing and Credits](docs/billing/pricing-and-credits.md)
 - [Production Runtime](docs/deployment/production.md)
 - [ADR 0001: PostgreSQL](docs/adr/0001-use-postgresql.md)
 - [ADR 0002: OpenAI API](docs/adr/0002-use-openai-api.md)
+- [ADR 0003: Provider-neutral Billing](docs/adr/0003-use-provider-neutral-billing-ledger.md)
 - [Contributing](CONTRIBUTING.md)
 - [Changelog](CHANGELOG.md)
 
