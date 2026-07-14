@@ -27,6 +27,9 @@ async def lifespan(_: FastAPI):
     settings.upload_dir.mkdir(parents=True, exist_ok=True)
     settings.generated_dir.mkdir(parents=True, exist_ok=True)
     init_db()
+    from app.api.v1.health import assert_database_schema_compatible
+
+    assert_database_schema_compatible()
     yield
 
 

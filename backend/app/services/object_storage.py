@@ -57,6 +57,11 @@ class ObjectStorage:
             content_type=content_type,
         )
 
+    def check_available(self) -> bool:
+        if self.backend == "local":
+            return self.local_root.is_dir() and os.access(self.local_root, os.R_OK | os.W_OK)
+        return bool(self._client(timeout_seconds=1.0).bucket_exists(self.bucket))
+
     def stat(self, object_key: str) -> ObjectStat:
         if self.backend == "local":
             path = self._local_path(object_key)
@@ -102,7 +107,7 @@ class ObjectStorage:
             raise AppError(400, "INVALID_OBJECT_KEY", "Invalid object key")
         return path
 
-    def _client(self):
+    def _client(self, timeout_seconds: float | None = None):
         from minio import Minio
 
         endpoint = os.getenv("R2_ENDPOINT", "")
@@ -112,4 +117,18 @@ class ObjectStorage:
         if not parsed.hostname or not access_key or not secret_key or not self.bucket:
             raise AppError(500, "STORAGE_CONFIGURATION_INVALID", "R2 storage is not fully configured")
         host = parsed.hostname + ((":" + str(parsed.port)) if parsed.port else "")
-        return Minio(host, access_key=access_key, secret_key=secret_key, secure=parsed.scheme == "https")
+        options = {}
+        if timeout_seconds is not None:
+            import urllib3
+
+            options["http_client"] = urllib3.PoolManager(
+                timeout=urllib3.Timeout(connect=timeout_seconds, read=timeout_seconds),
+                retries=False,
+            )
+        return Minio(
+            host,
+            access_key=access_key,
+            secret_key=secret_key,
+            secure=parsed.scheme == "https",
+            **options,
+        )
