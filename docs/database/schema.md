@@ -28,7 +28,7 @@ Không lưu PDF trong PostgreSQL trừ artifact rất nhỏ có lý do được 
 | <code>0020</code>-<code>0023</code> | Payment inbox/reconciliation, billable interview boundary, recommendation feedback và auditable ranking v2 |
 | <code>0024</code>-<code>0028</code> | OIDC provider-session identity, catalog schedule invariants, cumulative payment reversal/account review, durable AI dispatch và worker processing leases |
 | <code>0029</code>-<code>0030</code> | Persisted async-run correlation và transactional outbox cho admin background-job retry |
-| <code>0031</code> | DB-enforced immutability cho privacy audit events |
+| <code>0031</code>-<code>0032</code> | DB-enforced immutability cho privacy audit events, confirmed CV versions và interview timeline |
 
 Migration trong <code>migrations/versions/</code> là lịch sử physical schema bất biến. Bảng/constraint trong tài liệu chưa có revision tương ứng phải được coi là gap và cần migration riêng; không dùng <code>create_all</code> để thay thế migration ở production.
 
@@ -42,7 +42,8 @@ Migration trong <code>migrations/versions/</code> là lịch sử physical schem
 - Tiền lưu integer minor unit + ISO 4217 currency; credit lưu integer.
 - URL/object key không chứa email/tên người dùng.
 - Mọi unique key nhận từ provider phải scope theo provider/source.
-- Bảng event/ledger/outbox là append-only ở application permission.
+- Bảng event/ledger/outbox là append-only ở application permission; confirmed CV versions và interview events còn bị chặn <code>UPDATE</code> tại database.
+- Domain-history guard vẫn cho phép <code>DELETE</code> qua privacy workflow đã audit; không dùng guard để cản data-subject erasure.
 - Table name dùng snake_case plural.
 
 ## 4. Extensions
@@ -164,7 +165,7 @@ Append-only attempt: <code>id</code>, <code>scan_run_id</code>, attempt number, 
 | confirmed_version_id | uuid | nullable FK cv_versions |
 | created_at, updated_at | timestamptz | required |
 
-PATCH dùng <code>revision</code> hoặc ETag; confirm transaction kiểm tra status/revision.
+PATCH dùng <code>revision</code> hoặc ETag; confirm transaction khóa scan và parent CV, kiểm tra status/revision rồi cấp version tuần tự.
 
 ### cv_versions
 
@@ -185,6 +186,8 @@ Unique <code>(cv_id, version_no)</code> và <code>(cv_id, checksum)</code> theo 
 Index user/created_at, status/reconnect_deadline. Unique user/idempotency key.
 
 ### interview_events
+
+Event được ghi sau khi khóa interview aggregate; dedup client/provider ID và cấp sequence diễn ra trong cùng critical section. Event đã ghi không được <code>UPDATE</code> ở database.
 
 Append-only ordered log: <code>id</code>, <code>session_id</code>, <code>sequence_no</code>, event type, speaker, occurred_at, text content nullable, artifact file ID nullable, provider event ID nullable, safe metadata JSONB.
 

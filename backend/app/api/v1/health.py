@@ -12,7 +12,7 @@ from app.core.db import SessionLocal
 from app.services.object_storage import ObjectStorage
 
 router = APIRouter(tags=["Health"])
-REQUIRED_DATABASE_REVISION = "20260715_0031"
+REQUIRED_DATABASE_REVISION = "20260715_0032"
 
 
 class HealthResponse(BaseModel):

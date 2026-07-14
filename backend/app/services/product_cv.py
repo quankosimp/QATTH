@@ -255,6 +255,14 @@ class ProductCvService:
         if replay is not None:
             return replay
         IdentityService(self.db).require_consent(current.id)
+        scan = self.db.scalar(
+            select(CvScan)
+            .where(CvScan.id == scan_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if scan is None or (current.role != "admin" and scan.user_id != current.id):
+            raise AppError(404, "CV_SCAN_NOT_FOUND", "CV scan was not found")
         existing = self.db.scalar(select(ProductCvVersion).where(ProductCvVersion.source_scan_id == scan.id))
         if existing is not None:
             idempotency.complete(result.record, resource_type="cv_version", resource_id=existing.id, response_status=201)
@@ -272,7 +280,7 @@ class ProductCvService:
                 "Confirm request does not reference the current draft",
                 details={"current_revision": draft.revision, "current_checksum": draft.checksum},
             )
-        cv = self._cv(current, scan.cv_id) if scan.cv_id else ProductCV(
+        cv = self._cv(current, scan.cv_id, lock=True) if scan.cv_id else ProductCV(
             user_id=current.id,
             title=payload.title or self._default_title(draft.content),
             status="active",
@@ -556,8 +564,11 @@ class ProductCvService:
             raise AppError(404, not_found_code, "The idempotent request resource was not found")
         return resource
 
-    def _cv(self, current: ProductCurrentUser, cv_id: str | None) -> ProductCV:
-        cv = self.db.get(ProductCV, cv_id) if cv_id else None
+    def _cv(self, current: ProductCurrentUser, cv_id: str | None, *, lock: bool = False) -> ProductCV:
+        statement = select(ProductCV).where(ProductCV.id == cv_id) if cv_id else None
+        if statement is not None and lock:
+            statement = statement.with_for_update().execution_options(populate_existing=True)
+        cv = self.db.scalar(statement) if statement is not None else None
         if cv is None or (current.role != "admin" and cv.user_id != current.id):
             raise AppError(404, "CV_NOT_FOUND", "CV was not found")
         return cv

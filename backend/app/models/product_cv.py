@@ -107,6 +107,7 @@ class ProductCvVersion(Base):
     __tablename__ = "product_cv_versions"
     __table_args__ = (
         UniqueConstraint("cv_id", "version", name="uq_product_cv_version"),
+        UniqueConstraint("source_scan_id", name="uq_product_cv_version_source_scan"),
         Index("ix_product_cv_versions_user_created", "user_id", "created_at"),
     )
 

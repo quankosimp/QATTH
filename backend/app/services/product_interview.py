@@ -164,6 +164,17 @@ class ProductInterviewService:
             raise AppError(404, "INTERVIEW_NOT_FOUND", "Interview was not found")
         return interview
 
+    def _locked_interview(self, current: ProductCurrentUser, interview_id: str) -> ProductInterview:
+        interview = self.db.scalar(
+            select(ProductInterview)
+            .where(ProductInterview.id == interview_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if interview is None or (current.role != "admin" and interview.user_id != current.id):
+            raise AppError(404, "INTERVIEW_NOT_FOUND", "Interview was not found")
+        return interview
+
     def create_realtime_token(
         self,
         current: ProductCurrentUser,
@@ -247,6 +258,11 @@ class ProductInterviewService:
 
     def consume_realtime_token(self, interview_id: str, raw_token: str) -> ProductInterview:
         digest = hashlib.sha256(raw_token.encode()).hexdigest()
+        interview = self.db.scalar(
+            select(ProductInterview).where(ProductInterview.id == interview_id).with_for_update()
+        )
+        if interview is None:
+            raise AppError(401, "REALTIME_TOKEN_INVALID", "Realtime token is invalid or expired")
         token = self.db.scalar(
             select(InterviewRealtimeToken)
             .where(
@@ -258,10 +274,7 @@ class ProductInterviewService:
         now = _utcnow()
         if token is None or token.expires_at <= now or token.consumed_at is not None or token.revoked_at is not None:
             raise AppError(401, "REALTIME_TOKEN_INVALID", "Realtime token is invalid or expired")
-        interview = self.db.scalar(
-            select(ProductInterview).where(ProductInterview.id == interview_id).with_for_update()
-        )
-        if interview is None or interview.user_id != token.user_id or interview.status not in {"ready", "interrupted"}:
+        if interview.user_id != token.user_id or interview.status not in {"ready", "interrupted"}:
             raise AppError(409, "INTERVIEW_NOT_CONNECTABLE", "Interview cannot accept a realtime connection")
         IdentityService(self.db).require_consent(token.user_id)
         if self._reconnect_expired(interview, now):
@@ -290,7 +303,9 @@ class ProductInterviewService:
         return interview
 
     def mark_interrupted(self, interview_id: str) -> None:
-        interview = self.db.get(ProductInterview, interview_id)
+        interview = self.db.scalar(
+            select(ProductInterview).where(ProductInterview.id == interview_id).with_for_update()
+        )
         if interview is not None and interview.status == "live":
             from app.core.config import get_settings
 
@@ -301,7 +316,9 @@ class ProductInterviewService:
             self.db.commit()
 
     def update_resumption_handle(self, interview_id: str, handle: str | None) -> None:
-        interview = self.db.get(ProductInterview, interview_id)
+        interview = self.db.scalar(
+            select(ProductInterview).where(ProductInterview.id == interview_id).with_for_update()
+        )
         if interview is not None:
             interview.gemini_resumption_handle = handle
             self.db.commit()
@@ -317,6 +334,11 @@ class ProductInterviewService:
         client_event_id: str | None = None,
         provider_event_id: str | None = None,
     ) -> ProductInterviewEvent:
+        interview = self.db.scalar(
+            select(ProductInterview).where(ProductInterview.id == interview_id).with_for_update()
+        )
+        if interview is None:
+            raise AppError(404, "INTERVIEW_NOT_FOUND", "Interview was not found")
         if client_event_id:
             existing = self.db.scalar(
                 select(ProductInterviewEvent).where(
@@ -325,6 +347,7 @@ class ProductInterviewService:
                 )
             )
             if existing is not None:
+                self.db.commit()
                 setattr(existing, "_deduplicated", True)
                 return existing
         if provider_event_id:
@@ -335,13 +358,9 @@ class ProductInterviewService:
                 )
             )
             if existing is not None:
+                self.db.commit()
                 setattr(existing, "_deduplicated", True)
                 return existing
-        interview = self.db.scalar(
-            select(ProductInterview).where(ProductInterview.id == interview_id).with_for_update()
-        )
-        if interview is None:
-            raise AppError(404, "INTERVIEW_NOT_FOUND", "Interview was not found")
         sequence = (
             self.db.scalar(
                 select(func.max(ProductInterviewEvent.sequence)).where(
@@ -384,7 +403,9 @@ class ProductInterviewService:
         return interview
 
     def end_realtime(self, interview_id: str) -> ProductInterview:
-        interview = self.db.get(ProductInterview, interview_id)
+        interview = self.db.scalar(
+            select(ProductInterview).where(ProductInterview.id == interview_id).with_for_update()
+        )
         if interview is None:
             raise AppError(404, "INTERVIEW_NOT_FOUND", "Interview was not found")
         candidate_events = self.db.scalar(
@@ -482,6 +503,7 @@ class ProductInterviewService:
         replay = self._replayed_resource(current, result, ProductInterview, "INTERVIEW_NOT_FOUND")
         if replay is not None:
             return replay
+        interview = self._locked_interview(current, interview_id)
         if interview.status in {"evaluating", "completed", "evaluation_failed"}:
             idempotency.complete(result.record, resource_type="interview", resource_id=interview.id, response_status=202)
             self.db.commit()
@@ -561,6 +583,7 @@ class ProductInterviewService:
         replay = self._replayed_resource(current, result, ProductInterview, "INTERVIEW_NOT_FOUND")
         if replay is not None:
             return replay
+        interview = self._locked_interview(current, interview_id)
         if interview.status in {"completed", "evaluating"}:
             raise AppError(409, "INTERVIEW_NOT_CANCELLABLE", "Interview can no longer be cancelled")
         if interview.status != "cancelled":
@@ -592,6 +615,7 @@ class ProductInterviewService:
         if replay is not None:
             return replay
         IdentityService(self.db).require_consent(current.id)
+        interview = self._locked_interview(current, interview_id)
         previous = self.report(current, interview_id)
         if previous is None or previous.status != "failed":
             raise AppError(409, "INTERVIEW_REPORT_NOT_RETRYABLE", "Only failed evaluations can be retried")
