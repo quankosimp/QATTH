@@ -1,7 +1,7 @@
 [project]
 name = "qatth-career-platform"
 version = "0.1.0"
-description = "Backend-first MVP for IT student CV scanning, virtual interviews, and job matching."
+description = "Production-oriented backend for IT student CV intelligence, virtual interviews, and job matching."
 requires-python = ">=3.11"
 dependencies = [
     "alembic>=1.14.0",
@@ -13,11 +13,18 @@ dependencies = [
     "httpx>=0.27.0",
     "minio>=7.2.0",
     "numpy>=1.26.0",
+    "opentelemetry-api>=1.29.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.29.0",
+    "opentelemetry-instrumentation-celery>=0.50b0",
     "opentelemetry-instrumentation-fastapi>=0.50b0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.50b0",
+    "opentelemetry-sdk>=1.29.0",
+    "pgvector>=0.3.6",
     "prometheus-fastapi-instrumentator>=7.0.0",
     "playwright>=1.45.0",
     "psycopg[binary]>=3.2.1",
     "pydantic-settings>=2.4.0",
+    "pyyaml>=6.0.2",
     "python-dotenv>=1.0.1",
     "python-multipart>=0.0.9",
     "redis>=5.0.0",

@@ -8,14 +8,21 @@ WORKDIR /app
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && addgroup --system qatth \
+    && adduser --system --ingroup qatth qatth
 
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md alembic.ini ./
 COPY backend ./backend
+COPY migrations ./migrations
 
 RUN pip install --upgrade pip \
-    && pip install -e .
+    && pip install -e . \
+    && mkdir -p /app/data/uploads /app/data/generated \
+    && chown -R qatth:qatth /app/data
+
+USER qatth
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--app-dir", "backend"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--app-dir", "backend", "--timeout-graceful-shutdown", "30"]

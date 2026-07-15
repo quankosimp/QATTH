@@ -3,21 +3,46 @@ import sys
 
 import structlog
 
+from app.core.config import get_settings
+
 
 def configure_logging() -> None:
+    settings = get_settings()
+    level = getattr(logging, settings.log_level.upper(), logging.INFO)
+
+    def add_runtime_context(_, __, event_dict):
+        event_dict.setdefault("service", settings.app_name)
+        event_dict.setdefault("environment", settings.app_env)
+        if "level" in event_dict:
+            event_dict.setdefault("severity", str(event_dict["level"]).upper())
+        try:
+            from opentelemetry import trace
+
+            span_context = trace.get_current_span().get_span_context()
+            if span_context.is_valid:
+                event_dict.setdefault("trace_id", format(span_context.trace_id, "032x"))
+                event_dict.setdefault("span_id", format(span_context.span_id, "016x"))
+        except ImportError:
+            pass
+        return event_dict
+
     logging.basicConfig(
         format="%(message)s",
         stream=sys.stdout,
-        level=logging.INFO,
+        level=level,
+        force=True,
     )
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,
             structlog.processors.add_log_level,
-            structlog.processors.TimeStamper(fmt="iso"),
+            add_runtime_context,
+            structlog.processors.TimeStamper(fmt="iso", utc=True),
+            structlog.processors.StackInfoRenderer(),
+            structlog.processors.format_exc_info,
             structlog.processors.JSONRenderer(),
         ],
-        wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+        wrapper_class=structlog.make_filtering_bound_logger(level),
         logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=True,
     )

@@ -1,236 +1,194 @@
-# QATTH Career Platform
+# QATTH
 
-QATTH is a career-assistant platform for IT students who need a clearer path from **CV preparation** to **interview practice** to **finding suitable jobs**.
+QATTH là nền tảng hỗ trợ sinh viên IT chuyển CV thành hồ sơ nghề nghiệp có cấu trúc, luyện phỏng vấn với AI và tìm việc làm phù hợp còn hiệu lực trên Internet.
 
-The product is designed for students at internship, fresher, and junior level. Instead of only showing a job board, QATTH analyzes the student's CV, helps them practice through an AI interview, evaluates their readiness, and recommends jobs with clear reasons and skill gaps.
+Sản phẩm tạo một vòng lặp hoàn chỉnh:
 
-This repository is the **backend/product API branch**. It exposes the API contract for a separate frontend team or future frontend application.
+1. Sinh viên tải CV lên.
+2. AI trích xuất CV thành dữ liệu có cấu trúc.
+3. Sinh viên kiểm tra, chỉnh sửa và xác nhận trước khi lưu.
+4. Phòng phỏng vấn AI được cá nhân hóa theo CV và mục tiêu nghề nghiệp.
+5. Hệ thống đánh giá buổi phỏng vấn, xác định khoảng trống kỹ năng.
+6. Công việc được tìm từ chỉ mục nội bộ và nguồn web còn hiệu lực, sau đó xếp hạng theo mức độ phù hợp.
+7. Người dùng nhận giải thích, JD, nguồn gốc và theo dõi quá trình ứng tuyển.
 
-## What the product does
+## Trạng thái sản phẩm
 
-QATTH helps an IT student answer three practical questions:
+Repository chứa backend Product v1 theo kiến trúc modular monolith, migration PostgreSQL và API contract được đồng bộ từ runtime. Phần lõi CV, interview lifecycle, job search, recommendation, billing ledger, privacy và administration đã có implementation cùng contract test; tích hợp realtime/provider thanh toán và bằng chứng SLO production vẫn là release gate.
 
-1. Is my CV understandable and structured enough for job matching?
-2. Am I ready for interviews for my target IT role?
-3. Which jobs fit my current skills, projects, preferences, and interview performance?
+| Phạm vi | Trạng thái backend | Release gate còn lại |
+|---|---|---|
+| CV | Upload intent, scan attempt, JSON draft chỉnh sửa, confirm immutable version, analysis/retry/archive | Evaluation dataset và kiểm chứng R2/malware pipeline ở môi trường production |
+| Phỏng vấn | Plan/session/event/transcript, timeout/cancel, report retry và feedback | Kiểm chứng Gemini Live voice, reconnect/backpressure và voice load |
+| Việc làm | Catalog, provenance, verification, FTS + pgvector, live discovery, rerank, SSE và application tracking | Đánh giá retrieval trên dữ liệu thật và kiểm chứng nguồn web/provider |
+| AI | Provider adapter, resilience, lineage, usage/cost và budget guardrail | Offline quality gate, staged model rollout và production credentials |
+| Dữ liệu | Migration chain PostgreSQL/pgvector, Redis coordination và object-storage abstraction | Managed service, restore rehearsal và production retention evidence |
+| Vận hành | Docker image/Compose, health/readiness, diagnostics, metrics và audit | SLO/load/security evidence, dashboard/alerts do deployment team vận hành |
+| Thanh toán | Catalog, trial, bucketed ledger, reservation/refund và dual control | Payment checkout/webhook adapter được chứng nhận end-to-end |
 
-Main user journey:
+Mỗi operation trong [OpenAPI Product v1](docs/api/openapi.yaml) có trường <code>x-implementation-status</code> là <code>implemented</code>, <code>partial</code> hoặc <code>planned</code>. Contract được sinh từ runtime và giữ metadata requirement bằng [script đồng bộ](scripts/sync_openapi.py); CI/test phải chặn operation runtime không có trong contract.
 
-1. The student creates an account.
-2. The student uploads a CV.
-3. The system uses an LLM to scan the CV into structured JSON.
-4. The student reviews and edits the scanned JSON before saving it.
-5. The student starts either a mock interview for a target role or a diagnostic interview when they are not sure which JD fits.
-6. The system evaluates the interview using a role-based rubric.
-7. The system can create a candidate discovery profile from the reviewed CV and diagnostic interview.
-8. The system searches suitable live JD sources, ranks jobs, and explains fit/gaps.
-9. The student can save jobs, mark applied jobs, and give feedback so future matching can improve.
+## Đối tượng và giá trị
 
-## Core capabilities
+### Sinh viên IT
 
-### CV scan and review
+- Biến CV PDF thành hồ sơ có thể chỉnh sửa thay vì tin hoàn toàn vào kết quả AI.
+- Luyện phỏng vấn theo đúng kinh nghiệm, kỹ năng và vị trí mong muốn.
+- Hiểu điểm mạnh, điểm yếu và hành động cải thiện cụ thể.
+- Tìm việc còn hiệu lực, có JD và đường dẫn nguồn.
+- Biết vì sao một công việc phù hợp thay vì chỉ nhận một điểm số.
 
-- Upload PDF or DOCX CV.
-- Scan CV into structured JSON using Gemini.
-- Keep the LLM result as a draft.
-- Let the user edit the JSON before saving.
-- Store CV versions so draft and final profiles can be audited.
+### Nhóm vận hành sản phẩm
 
-### Virtual interview
+- Quản trị prompt/model version, chi phí AI và hạn mức sử dụng.
+- Theo dõi background job, provider failure, search quality và funnel ứng tuyển.
+- Xử lý yêu cầu export/xóa dữ liệu và điều tra bằng audit trail.
+- Quản lý subscription, credit và webhook theo cơ chế idempotent.
 
-- Create an interview room from a reviewed CV.
-- Support WebSocket-based interview sessions.
-- Integrate with Gemini Live when `GEMINI_API_KEY` is configured.
-- Store transcript and evaluation results.
-- Return interview score, strengths, weaknesses, recommended roles, and skill gaps.
+## Kiến trúc mục tiêu
 
-### Job ingestion, discovery, and matching
+~~~mermaid
+flowchart LR
+    U[Web/Mobile Client] --> E[Cloudflare CDN/WAF]
+    E --> API[Container API]
+    API --> PG[(Managed PostgreSQL + pgvector)]
+    API --> R[(Redis)]
+    API --> R2[(Cloudflare R2)]
+    API --> Q[Worker queues]
+    Q --> PG
+    Q --> R2
+    API --> OAI[OpenAI API]
+    Q --> OAI
+    API <--> GEM[Gemini Live API]
+    API --> PAY[Payment provider]
+    API --> OBS[Logs / Metrics / Traces]
+    Q --> OBS
+~~~
 
-- Store IT job postings with JD text, source URL, company, level, skills, location, and working model.
-- Seed local demo jobs for testing.
-- Support crawler adapter structure for public job sources.
-- Create candidate discovery profiles from reviewed CVs and diagnostic interviews.
-- Search live JD sources through a configured Search API provider.
-- Rank jobs using CV profile, discovery profile, interview result, user preferences, skill overlap, and semantic similarity.
-- Return match score, fit reasons, gap reasons, and apply URL.
+Các ranh giới quan trọng:
 
-### User product loop
+- PostgreSQL là nguồn dữ liệu nghiệp vụ chính; JSONB dùng cho payload linh hoạt có version, không thay thế schema quan hệ.
+- R2 lưu PDF, transcript artifact và raw JD lớn; database chỉ lưu metadata, checksum và object key.
+- Redis phục vụ cache, distributed rate limit, coordination và hàng đợi tùy implementation.
+- OpenAI xử lý structured extraction, evaluation, embeddings, web search và explanation.
+- Gemini Live chỉ chịu trách nhiệm hội thoại giọng nói realtime.
+- API không phụ thuộc trực tiếp vào một payment provider; webhook và transaction đi qua adapter nội bộ.
 
-- User registration and login.
-- User ownership for CVs, interviews, and match results.
-- Job preferences: target roles, locations, working models, salary expectation, preferred skills.
-- Job interactions: saved, applied, relevant, not relevant, hidden.
-- Privacy controls and user data deletion endpoint.
+Xem [Architecture Overview](docs/architecture/overview.md).
 
-### Admin and operations
+## Cấu trúc repository
 
-- Admin role support.
-- Admin APIs for users, CV scans, interviews, crawler runs, and jobs.
-- Readiness endpoint for runtime health checks.
-- Admin metrics endpoint for operational counters.
-- Production readiness checklist in `docs/production_readiness.md`.
+~~~text
+.
+├── backend/                  # FastAPI backend hiện tại
+├── tests/                    # Automated tests
+├── scripts/                  # Local/database utilities
+├── docs/
+│   ├── requirements/         # Functional và non-functional requirements
+│   ├── billing/              # Pricing, subscription, top-up và credit policy
+│   ├── architecture/         # System context, components và data flows
+│   ├── api/openapi.yaml      # Product v1 API contract
+│   ├── database/schema.md    # Logical schema và migration rules
+│   ├── deployment/           # Production runtime handoff
+│   └── adr/                  # Architecture Decision Records
+├── docker-compose.yml        # Local integration environment
+├── CHANGELOG.md
+└── CONTRIBUTING.md
+~~~
 
-## Current repository scope
+Code hiện vẫn nằm trong <code>backend/</code>. Bộ tài liệu không giả định việc đổi sang <code>src/</code>; thay đổi cấu trúc code phải có ADR/refactor riêng.
 
-This branch focuses on the backend and API contract.
+## Chạy backend local
 
-Included:
+Yêu cầu:
 
-- FastAPI backend
-- SQLAlchemy models
-- Auth and ownership
-- CV scan/review/versioning
-- Interview APIs and WebSocket contract
-- Gemini adapters
-- Job ingestion and matching
-- Admin APIs
-- Privacy and feedback APIs
-- Docker Compose for API + Postgres
-- API documentation via OpenAPI
+- Docker và Docker Compose.
+- Hoặc Python theo version khai báo trong [pyproject.toml](pyproject.toml).
 
-Not included in this branch:
+Khởi động bằng Docker:
 
-- Production frontend application
-- Temporary Streamlit demo
-
-The temporary Streamlit demo lives on branch:
-
-```text
-agent/qatth-streamlit-demo
-```
-
-## API documentation
-
-After starting the backend:
-
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
-- OpenAPI JSON: `http://localhost:8000/openapi.json`
-
-Frontend-facing contract summary:
-
-```text
-docs/api_contract.md
-```
-
-## Local development
-
-Requirements:
-
-- Python 3.11+
-- Docker, optional but recommended
-- Gemini API key, optional for demo fallback but required for real AI behavior
-
-Run locally with SQLite:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-cp .env.example .env
-alembic upgrade head
-uvicorn app.main:app --reload --app-dir backend
-```
-
-Run backend stack with Docker Compose:
-
-```bash
+~~~bash
 cp .env.example .env
 docker compose up --build
-```
+~~~
 
-Services:
+Địa chỉ mặc định:
 
-- FastAPI: `http://localhost:8000`
-- Swagger UI: `http://localhost:8000/docs`
-- Prometheus metrics: `http://localhost:8000/metrics`
-- PostgreSQL + pgvector: `localhost:5432`
-- Redis: `localhost:6379`
-- MinIO object storage: `http://localhost:9001`
-- Celery worker: `worker` service in Docker Compose
+- API: <code>http://localhost:8000</code>
+- Swagger UI: <code>http://localhost:8000/docs</code>
+- OpenAPI runtime hiện tại: <code>http://localhost:8000/openapi.json</code>
 
-For real Gemini-backed CV scan, interview evaluation, discovery profile generation, and Gemini Live interview, set this in `.env`:
+[docs/api/openapi.yaml](docs/api/openapi.yaml) là contract đã commit của backend Product v1. Chạy <code>PYTHONPATH=backend .venv/bin/python scripts/sync_openapi.py --check</code> để phát hiện contract bị lệch runtime.
 
-```env
-GEMINI_API_KEY=your_key_here
-```
+Chạy backend trực tiếp:
 
-For live external JD recommendations via SerpApi Google Jobs, set:
+~~~bash
+uv sync --all-groups
+uv run uvicorn app.main:app --app-dir backend --reload
+~~~
 
-```env
-JOB_SEARCH_PROVIDER=serpapi_google_jobs
-SERPAPI_API_KEY=your_key_here
-JOB_SEARCH_DEFAULT_LOCATION=Vietnam
-```
+Chạy test và lint:
 
-Database migrations:
+~~~bash
+.venv/bin/pytest -q
+.venv/bin/ruff check backend tests
+~~~
 
-```bash
-alembic upgrade head
-alembic revision --autogenerate -m "describe change"
-```
+Không commit secret, API key hoặc dữ liệu CV thật vào repository.
 
-## Typical backend flow
+## Nguyên tắc API Product v1
 
-1. Register or login:
+- Base path: <code>/v1</code>.
+- OIDC JWT cho API người dùng và admin.
+- Response envelope nhất quán: <code>data</code>, <code>error</code>, <code>meta</code>.
+- <code>X-Request-ID</code> dùng để truy vết xuyên API, worker và provider.
+- <code>Idempotency-Key</code> bắt buộc cho operation có side effect nhạy cảm.
+- Tác vụ dài trả <code>202 Accepted</code> cùng resource/status URL.
+- Cursor pagination thay cho offset ở collection có tăng trưởng lớn.
+- WebSocket dành cho voice realtime; SSE dành cho tiến trình search/report một chiều.
+- Error code ổn định và tách biệt với message hiển thị.
+- Endpoint admin phải có authorization theo role/scope và audit log.
 
-```text
-POST /v1/auth/register
-POST /v1/auth/login
-```
+## An toàn dữ liệu và AI
 
-2. Scan CV as draft:
+CV, transcript, đánh giá phỏng vấn và lịch sử ứng tuyển là dữ liệu cá nhân nhạy cảm. Product v1 yêu cầu:
 
-```text
-POST /v1/cvs/scan
-```
+- Người dùng xác nhận dữ liệu CV do AI trích xuất trước khi trở thành phiên bản chính thức.
+- Kết quả AI quan trọng lưu provider, model, prompt version, latency, token/cost và trạng thái.
+- Kết quả job từ web phải có source URL, thời điểm kiểm tra và trạng thái xác minh.
+- Không gửi dữ liệu vượt quá mục đích xử lý tới AI provider.
+- Có retention policy, export và deletion workflow.
+- Không dùng CV/transcript để train model nếu chưa có consent riêng, rõ ràng và có thể thu hồi.
+- AI score là tín hiệu hỗ trợ, không phải quyết định tuyển dụng tự động.
 
-3. Save reviewed CV JSON:
+## Tài liệu
 
-```text
-PUT /v1/cvs/{cv_id}/profile
-```
+- [Functional Requirements](docs/requirements/functional-requirements.md)
+- [Non-functional Requirements](docs/requirements/non-functional-requirements.md)
+- [Requirement Traceability](docs/requirements/traceability.md)
+- [Architecture Overview](docs/architecture/overview.md)
+- [Components](docs/architecture/components.md)
+- [Data Flow](docs/architecture/data-flow.md)
+- [OpenAPI Product v1](docs/api/openapi.yaml)
+- [Database Schema](docs/database/schema.md)
+- [Pricing and Credits](docs/billing/pricing-and-credits.md)
+- [Production Runtime](docs/deployment/production.md)
+- [Load Testing](docs/operations/load-testing.md)
+- [Backend Release Evidence 2026-07-15](docs/operations/backend-release-evidence-2026-07-15.md)
+- [ADR 0001: PostgreSQL](docs/adr/0001-use-postgresql.md)
+- [ADR 0002: OpenAI API](docs/adr/0002-use-openai-api.md)
+- [ADR 0003: Provider-neutral Billing](docs/adr/0003-use-provider-neutral-billing-ledger.md)
+- [Contributing](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
 
-4. Create and run interview. Use `interview_type=mock` for JD-first practice or `interview_type=diagnostic` when the student is unsure which JD fits:
+## Phân chia trách nhiệm
 
-```text
-POST /v1/interviews
-WS   /v1/interviews/{interview_id}/stream
-POST /v1/interviews/{interview_id}/end
-```
+Backend team chịu trách nhiệm API contract, business logic, database migrations, Docker image, runtime configuration, health/readiness, worker semantics và observability instrumentation.
 
-5. Candidate-first discovery flow:
+Deployment team chịu trách nhiệm provision hạ tầng cloud, DNS, TLS, network, secret injection, CI/CD, rollout/rollback, autoscaling, backup execution và incident platform.
 
-```text
-POST /v1/discovery-profiles
-POST /v1/recommendations/jobs
-```
+Chi tiết handoff nằm trong [Production Runtime](docs/deployment/production.md).
 
-6. Seed or ingest jobs:
+## Quy trình thay đổi
 
-```text
-POST /v1/jobs/crawl-runs
-```
-
-7. Generate JD-first job matches:
-
-```text
-POST /v1/matches
-```
-
-8. Record product feedback:
-
-```text
-POST /v1/jobs/{job_id}/interactions
-```
-
-## Product status
-
-This is an MVP foundation for a real product. It is intentionally backend-first so a dedicated frontend can be built later with a proper web framework.
-
-Important remaining production work:
-
-- Wire concrete CV scan, interview evaluation, job crawl, and match generation jobs into the Celery task system.
-- Improve crawler sources through official APIs, feeds, or partnerships.
-- Add automated integration tests for the full CV to interview to job matching flow.
-- Add production email delivery for password reset instead of returning local/dev reset tokens.
+Mọi thay đổi hành vi phải cập nhật đồng thời requirement liên quan, OpenAPI, schema/migration, test và changelog khi phù hợp. Xem [CONTRIBUTING.md](CONTRIBUTING.md).
